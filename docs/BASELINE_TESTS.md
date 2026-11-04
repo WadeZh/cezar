@@ -47,6 +47,6 @@ test:unit 的 3 个失败全部是 `spawnSync /bin/sh ENOENT`（`test/unit/test-
 ## 补录区
 
 ```
-BUILD_EXIT=（运行中）
-TEST_PACKAGE_EXIT=（运行中）
+BUILD_EXIT=0          # tsc + vite + check:pack（1293 files, shell+assets present）
+TEST_PACKAGE_EXIT=0   # 34/34 通过
 ```

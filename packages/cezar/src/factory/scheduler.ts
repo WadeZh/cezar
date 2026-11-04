@@ -68,8 +68,10 @@ export function isEligible(
   return { ok: true };
 }
 
-/** Aging per spec §9.1 step 4: every full 6 h waited lifts one level, never past P1. */
+/** Aging per spec §9.1 step 4: every full 6 h waited lifts one level, never past P1.
+ *  P0 never ages — the rule scopes aging to non-P0 ("非 P0 根据等待老化…最高到 P1"). */
 export function effectivePriority(task: { priority: number; createdAt: string; promoted?: boolean }, now: Date): number {
+  if (task.priority <= 0) return 0;
   const waitedMs = now.getTime() - new Date(task.createdAt).getTime();
   const levels = Math.floor(waitedMs / AGING_INTERVAL_MS);
   return Math.max(AGING_FLOOR_PRIORITY, task.priority - levels);
@@ -87,25 +89,29 @@ export function selectNext(
   credit: Record<FactoryCategory, number> = { software: 0, traffic: 0, weather: 0 },
 ): SchedulableTask | undefined {
   if (tasks.length === 0) return undefined;
-  const ranked = tasks
+  const weightsOf = (c: FactoryCategory) => weights[c] ?? 0;
+  // Weighted fair queuing on task count: pick the category with the smallest
+  // accumulated cost, then charge it its weight. Long-run share ≈ weight ratio
+  // (5:3:2); a weight-0 category never accumulates cost and would starve
+  // everyone else, so it is skipped while competitors have backlog (spec §9.1
+  // 空分类额度可借用, inverted: a configured 0 lends its turns away).
+  const eligible = tasks.filter((t) => weightsOf(t.category) > 0);
+  const pool = eligible.length > 0 ? eligible : tasks; // a 0/0/0 config still must not deadlock
+  const ranked = pool
     .map((t) => ({ ...t, priority: effectivePriority(t, now) }))
     .sort((a, b) => {
       // promoted first (already ahead in the FIFO queue; keep the choice stable)
       if (a.promoted !== b.promoted) return a.promoted ? -1 : 1;
       if (a.priority !== b.priority) return a.priority - b.priority;
-      // weighted round-robin: lower remaining credit (more deficit) first, by weight
-      const wa = credit[a.category] ?? weights[a.category];
-      const wb = credit[b.category] ?? weights[b.category];
-      if (wa !== wb) return wa - wb;
+      const ca = credit[a.category] ?? 0;
+      const cb = credit[b.category] ?? 0;
+      if (ca !== cb) return ca - cb;
       if (a.createdAt !== b.createdAt) return (a.createdAt < b.createdAt ? -1 : 1);
       return a.key < b.key ? -1 : a.key > b.key ? 1 : 0;
     });
   const chosen = ranked[0];
-  if (!chosen) return undefined; // ranked mirrors tasks, which the early return already covered
-  // Charge the chosen category one token of its weight budget; a category with
-  // weight 0 (user-configured) never gains credit and thus never leads while
-  // competitors have backlog.
-  credit[chosen.category] = (credit[chosen.category] ?? weights[chosen.category]) - 1;
+  if (!chosen) return undefined; // ranked mirrors the pool, which the early return already covered
+  credit[chosen.category] = (credit[chosen.category] ?? 0) + weightsOf(chosen.category);
   return chosen;
 }
 

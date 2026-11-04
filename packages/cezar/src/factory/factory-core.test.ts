@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, readFileSync } from 'node:fs';
+import { mkdtempSync, rmSync, writeFileSync, existsSync, readdirSync, readFileSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -71,6 +71,7 @@ describe('factory state', () => {
   });
 
   it('quarantines a corrupt file and refuses to continue silently', () => {
+    mkdirSync(join(dir, 'factory'), { recursive: true });
     writeFileSync(factoryStatePath(dir), '{not json', 'utf8');
     expect(() => FactoryState.open(dir)).toThrow(FactoryStateError);
     const files = readdirSync(join(dir, 'factory'));
@@ -204,6 +205,7 @@ describe('factory controls', () => {
   });
 
   it('fails safe on an unreadable controls file (brake, never accelerator)', () => {
+    mkdirSync(join(dir, 'factory'), { recursive: true });
     writeFileSync(join(dir, 'factory', 'controls.json'), 'garbage', 'utf8');
     const c = loadFactoryControls(dir);
     expect(c.stopped).toBe(true);
