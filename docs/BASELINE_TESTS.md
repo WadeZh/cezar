@@ -23,6 +23,9 @@ vitest 622 个 FAIL 标记中：
 
 test:unit 的 3 个失败全部是 `spawnSync /bin/sh ENOENT`（`test/unit/test-env-launcher.test.ts`）——测试硬编码 POSIX shell，**原生 Windows 上游既有失败**。
 
+### M2 期间补充观察（2026-11-05）
+- `graph-run.test.ts` / `check-retry-on.test.ts` 在 Windows 上 afterEach `rmSync` 出现 **EBUSY 清理失败**（断言全部通过，失败数随机器负载在 3-6 间浮动；上游原版同跑 3-4 个）——既有平台噪声，非 factory 改动引入（改动仅为 command 检查路径增加 unref'd 超时定时器与 argv 分支）。
+
 ### 判定方法
 - 失败文件与 factory 增量（contract/factory.ts、store.ts/run.ts 的 optional `factory` 字段）无交集；factory 字段为纯 optional + `.catch(undefined)`，typecheck 全绿。
 - 超时类失败与用例内容无关（同文件重跑波动）——按 AGENTS.md 要求如实记录，不掩盖也不武断归因"与本次无关"。

@@ -83,7 +83,7 @@ export const graphNodeSchema = z.discriminatedUnion('type', [
     retryOn: z.array(z.number().int().positive()).optional(),
     /** The secrets this command may read (see `workflowStepSchema.secrets`). */
     secrets: stepSecretsSchema.optional(),
-  }).refine((n) => Boolean(n.command) !== Boolean(n.argv), {
+  }).refine((n) => !(n.command && n.argv), {
     message: 'a check node is `command` (login shell) XOR `argv` (literal arguments), not both',
   }),
   // ---- phase 1c: nodes cezar executes itself (no agent session) ----

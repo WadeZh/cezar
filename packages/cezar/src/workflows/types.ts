@@ -78,7 +78,7 @@ export const workflowStepSchema = z
   .refine((s) => Boolean(s.command || s.argv) !== Boolean(s.prompt ?? s.skill), {
     message: 'a step is either an agent step (prompt/skill) or a check step (command or argv), not both',
   })
-  .refine((s) => Boolean(s.command) !== Boolean(s.argv), {
+  .refine((s) => !(s.command && s.argv), {
     message: 'a check step is `command` (login shell) XOR `argv` (literal arguments), not both',
   })
   .refine((s) => !s.secrets || Boolean(s.command || s.argv), {
