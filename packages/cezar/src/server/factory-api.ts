@@ -23,6 +23,7 @@ import { FactoryState as FactoryStateStore } from '../factory/state.ts';
 import { importFactoryTasks } from '../factory/import.ts';
 import { moveLifecycle } from '../factory/lifecycle.ts';
 import { publishFactoryTask } from '../factory/publish.ts';
+import { hardStopFactoryTasks } from '../factory/hardstop.ts';
 import {
   dispatchAllowed,
   loadFactoryControls,
@@ -313,13 +314,18 @@ export function factoryWorkspaceRoutes(deps: FactoryApiDeps) {
       return c.json({ paused: true });
     })
 
-    .post('/factory/stop', jsonZodValidator(factoryControlActionSchema), (c) => {
+    .post('/factory/stop', jsonZodValidator(factoryControlActionSchema), async (c) => {
       const { reason } = c.req.valid('json');
-      // M1 records the stop intent (no new dispatch, survives restart). The M4
-      // hard stop adds the 10-second process-tree kill; claiming more here
-      // would be a lie (spec: 报告区分已实现、已测试、跳过和阻塞).
       setStopped(deps.homeDir, true, reason);
-      return c.json({ stopped: true, note: 'process-tree termination arrives in M4; no new tasks will start' });
+      // HARD STOP (spec §13.3): terminate each active factory task's process
+      // tree within the 10 s budget; unconfirmed kills stay safe-blocked.
+      const report = await hardStopFactoryTasks(factoryProjects());
+      return c.json({
+        stopped: true,
+        killed: report.killed,
+        uncertain: report.uncertain,
+        elapsedMs: report.elapsedMs,
+      });
     })
 
     .post('/factory/resume', jsonZodValidator(factoryControlActionSchema), (c) => {
