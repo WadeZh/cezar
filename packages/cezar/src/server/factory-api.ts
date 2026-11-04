@@ -22,6 +22,7 @@ import { AgentUsageHolds } from '../workspace/agent-usage-holds.ts';
 import { FactoryState as FactoryStateStore } from '../factory/state.ts';
 import { importFactoryTasks } from '../factory/import.ts';
 import { moveLifecycle } from '../factory/lifecycle.ts';
+import { publishFactoryTask } from '../factory/publish.ts';
 import {
   dispatchAllowed,
   loadFactoryControls,
@@ -181,7 +182,7 @@ export function factoryProjectRoutes() {
       return c.json({ taskId: run.id, version: version + 1 });
     })
 
-    .post('/factory/tasks/:taskId/actions', jsonZodValidator(factoryTaskActionSchema), (c) => {
+    .post('/factory/tasks/:taskId/actions', jsonZodValidator(factoryTaskActionSchema), async (c) => {
       const project = c.get('project');
       const run = project.store.getRun(c.req.param('taskId'));
       const factory = run?.factory;
@@ -217,10 +218,21 @@ export function factoryProjectRoutes() {
             project.manager.promote(run.id);
             return c.json({ retried: true });
           }
-          case 'publish':
-            // M3 delivers the idempotent publish chain; the action exists so the
-            // wire shape is stable, and answers honestly until then (spec: 不伪造).
-            return c.json(err('publish is not implemented yet (M3) — use POST /runs/:id/pr on the run', 'publish_unavailable'), 409);
+          case 'publish': {
+            // Idempotent publish chain (spec §11.3): the durable intent lives in
+            // the factory state; createDraftPr (upstream) pushes without force
+            // and ADOPTS an existing PR for the head instead of duplicating.
+            const outcome = await publishFactoryTask({
+              repoRoot: project.root,
+              dataDir: project.dataDir,
+              store: project.store,
+              manager: project.manager,
+              taskId: run.id,
+              draft: action.draft !== false,
+            });
+            if (outcome.ok) return c.json({ published: true, status: outcome.status, prUrl: outcome.prUrl ?? null });
+            return c.json(err(outcome.error ?? 'publish failed', `publish_${outcome.status}`), outcome.status === 'blocked' ? 409 : 502);
+          }
         }
       } catch (e) {
         return c.json(err(String((e as Error)?.message ?? e), 'action_failed'), 409);

@@ -4,15 +4,20 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { FactoryEngine, type FactoryEngineHost, type FactoryProjectHandle } from './engine.ts';
 import { setStopped, setPaused } from './controls.ts';
+import { acquireWorkspaceLease, releaseWorkspaceLease } from './lease.ts';
 import type { FactoryState as FactoryStateShape } from '@open-mercato/cezar-contract';
 
 let dir: string;
 
-beforeEach(() => {
+beforeEach(async () => {
   dir = mkdtempSync(join(tmpdir(), 'cezar-factory-engine-'));
+  // The selector's workspace-lease gate (spec §11.1) must be satisfied for
+  // dispatch tests; afterEach releases it.
+  await acquireWorkspaceLease(dir);
 });
 
 afterEach(() => {
+  releaseWorkspaceLease();
   rmSync(dir, { recursive: true, force: true });
 });
 

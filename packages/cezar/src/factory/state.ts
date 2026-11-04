@@ -160,7 +160,7 @@ export class FactoryState {
     return this.data.publishIntents[taskId];
   }
 
-  setPublishIntent(intent: FactoryPublishIntent, now = new Date().toISOString()): void {
+  setPublishIntent(intent: Omit<FactoryPublishIntent, 'updatedAt'>, now = new Date().toISOString()): void {
     this.data.publishIntents[intent.taskId] = { ...intent, updatedAt: now };
     this.save();
   }

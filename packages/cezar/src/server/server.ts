@@ -334,6 +334,7 @@ import { readUiState, uiStatePath } from '../ui-state.ts';
 import { agentHomePaths, cezarHomeDir, expandTilde, isAbsolutePath } from '../paths.ts';
 import { factoryProjectRoutes, factoryWorkspaceRoutes } from './factory-api.ts';
 import { FactoryEngine } from '../factory/engine.ts';
+import { acquireWorkspaceLease, releaseWorkspaceLease } from '../factory/lease.ts';
 import { renameWithRetry } from '../fs-rename.ts';
 import { agentAccountsEnabled, isLoopbackHostHeader, normalizeHostname, resolveCapabilities } from './capabilities.ts';
 import { createSocketHub, type SocketHub, type WsUpgradeVerdict } from './ws.ts';
@@ -8101,7 +8102,11 @@ export function createApp(deps: ServerDeps) {
     }),
     wake: () => contexts.workspaceSemaphore.refresh(),
   });
-  factoryEngine.start();
+  // Workspace dispatch lease (spec §11.1): exactly one live process runs the
+  // factory engine and counts budgets; the loser stays a passive reader.
+  void acquireWorkspaceLease(cezarHomeDir()).then((held) => {
+    if (held) factoryEngine.start();
+  });
   deps.onDispose?.(() => factoryEngine.stop());
   // Wire the selector onto every manager as its context builds (boot included).
   const offFactoryBuilt = contexts.onContextBuilt((ctx) => {
@@ -8114,6 +8119,7 @@ export function createApp(deps: ServerDeps) {
     });
   });
   deps.onDispose?.(offFactoryBuilt);
+  deps.onDispose?.(() => releaseWorkspaceLease());
   bootContext.manager.queueSelector = factoryEngine.selectorFor({
     id: bootContext.id,
     root: bootContext.root,

@@ -7,6 +7,8 @@ import { FactoryState } from './state.ts';
 import { isEligible, selectNext, SchedulableTask } from './scheduler.ts';
 import { isWallClockExceeded, repairCountFromSteps } from './runner.ts';
 import { resultMdOf, writeResultReport } from './report.ts';
+import { writeDispatchIntent, writeSettleCheckpoint, sweepCheckpoints } from './checkpoint.ts';
+import { holdsWorkspaceLease } from './lease.ts';
 
 /**
  * Factory dispatch engine (spec §9).
@@ -82,6 +84,10 @@ export class FactoryEngine {
       // to tax the composer (spec §9.1 step 3 — 置顶/普通用户任务优先于工厂选择).
       const plain = startable.find((r) => !r.factory);
       if (plain) return plain;
+      // The workspace dispatch lease gates FACTORY dispatch only: a second
+      // legitimate server process (another repo, same CEZ_HOME) keeps serving
+      // its users, but only one instance counts budgets and picks pool work.
+      if (!holdsWorkspaceLease()) return undefined;
       const controls = loadFactoryControls(this.host.homeDir, now);
       if (!dispatchAllowed(controls).ok) return undefined;
       let state: FactoryState;
@@ -132,7 +138,20 @@ export class FactoryEngine {
       // Record-first (spec §7): the lifecycle leaves `queued` BEFORE the pump
       // starts the run, so a crash in between reconciles a preparing task, not
       // a phantom queued one. queued → preparing is a legal transition.
-      if (winner.factory) moveLifecycle(handle.store, winner.id, winner.factory, 'preparing', { note: 'factory dispatch' });
+      if (winner.factory) {
+        moveLifecycle(handle.store, winner.id, winner.factory, 'preparing', { note: 'factory dispatch' });
+        writeDispatchIntent(handle.dataDir, {
+          runId: winner.id,
+          key: winner.factory.key,
+          policyVersion: winner.factory.policyVersion,
+          workflowName: '(factory)',
+          acceptanceProfileId: winner.factory.acceptanceProfileId,
+        }, now);
+      }
+      // The daily budget is whole-file workspace state. Only the lease holder
+      // ever reaches this line (the gate above), so a direct synchronous write
+      // is the racy-window-free path — a deferred write would let the pump
+      // start the run before the budget counted it.
       recordTaskStart(this.host.homeDir, now);
       return winner;
     };
@@ -207,12 +226,33 @@ export function reconcileProject(project: FactoryProjectHandle, now: Date): numb
     // The report is written AT SETTLEMENT, from the settled record (spec §15).
     const markdown = resultMdOf(m.run, m.run.factory);
     const path = writeResultReport(project.dataDir, m.run.id, markdown);
+    // The settle checkpoint carries the git facts a restart reasons from (§11.1).
+    writeSettleCheckpoint(project.dataDir, {
+      runId: m.run.id,
+      key: m.run.factory.key,
+      policyVersion: m.run.factory.policyVersion,
+      workflowName: '(factory)',
+      acceptanceProfileId: m.run.factory.acceptanceProfileId,
+      outcome: {
+        status: m.run.status,
+        branch: m.run.branch,
+        baseBranch: m.run.baseBranch,
+        baseCommit: m.run.factory.baseCommit,
+        diffStat: m.run.diffStat ?? null,
+        repairAttemptCount: m.run.factory.repairAttemptCount,
+        pullRequestUrl: m.run.pullRequestUrl ?? null,
+        error: m.run.error ?? null,
+      },
+    });
     project.store.appendEvent(m.run.id, {
       type: 'factory',
       report: path ?? null,
       note: path ? 'result.md written to artifacts' : 'result.md could not be written',
     });
     changes += 1;
+  }
+  if (changes > 0) {
+    sweepCheckpoints(project.dataDir, new Set(project.store.listRuns().map((r) => r.id)));
   }
   return changes;
 }
