@@ -1030,6 +1030,10 @@ export interface StartRunInput {
   /** Internal (#1300): this job resumes the agent step a usage limit interrupted. Set only by
    *  `fireAutoResume` (and a restart that revives that queued job), never derived in `execute`. */
   usageLimitResume?: boolean;
+  /** Cezar-GLM factory extension (docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §7): the task-pool state
+   *  persisted verbatim on the record at creation. Internal: only the factory import/creation
+   *  routes set it; `POST /runs` has no such field. */
+  factory?: RunRecord['factory'];
 }
 
 /**
@@ -1963,6 +1967,7 @@ export class RunManager {
       worktree: !group && !input.dispatchIntent && !input.forkRef && input.worktree === false ? false : undefined,
       groupId: group?.groupId,
       variant: group?.variant,
+      factory: input.factory,
       steps: workflow.graph
         ? graphRailSteps(workflow.graph)
         : workflow.steps.map((s) => ({ id: s.id, name: s.name ?? s.id, kind: stepKind(s) })),

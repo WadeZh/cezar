@@ -39,6 +39,7 @@ import { workflowDefSchema } from '../workflows/types.ts';
 // `dispatch` object and its wire half are literally the same schema, so they cannot drift.
 import type { RunArtifact, RunArtifactVersion } from '@open-mercato/cezar-contract';
 import { dispatchSchema, runSubjectSchema, trackerAssociationSchema, trackerAutomationEventSchema, webhookAttentionRequestSchema, webhookCompletionReasonSchema, worktreeLifecycleProjectionSchema } from '@open-mercato/cezar-contract';
+import { factoryStateSchema } from '@open-mercato/cezar-contract';
 
 import { RUNNER_IDS } from '../core/agent-runner.ts';
 
@@ -531,6 +532,12 @@ export const runRecordSchema = z.object({
     })
     .optional()
     .catch(undefined),
+  /** Cezar-GLM task-pool extension (docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §7): the fine-grained
+   *  `lifecycle`, category/priority scheduling fields, dependency graph and publish mode of a
+   *  factory task. Optional + `.catch(undefined)` like `workflowDef`/`graphState` — a record
+   *  written before the feature (or a hand-edited one) drops the object rather than failing the
+   *  whole index, and factory-less runs behave exactly as they always did (A20). */
+  factory: factoryStateSchema.optional().catch(undefined),
 });
 
 export type StepState = z.infer<typeof stepStateSchema>;
@@ -1435,6 +1442,8 @@ export class RunStore extends EventEmitter {
     worktree?: false;
     groupId?: string;
     variant?: string;
+    /** Cezar-GLM factory extension, persisted verbatim when present (see `runRecordSchema.factory`). */
+    factory?: RunRecord['factory'];
     steps: Array<Pick<StepState, 'id' | 'name' | 'kind'>>;
   }): RunRecord {
     const run: RunRecord = {
@@ -1458,6 +1467,7 @@ export class RunStore extends EventEmitter {
       worktree: input.worktree,
       groupId: input.groupId,
       variant: input.variant,
+      factory: input.factory,
       status: 'queued',
       createdAt: new Date().toISOString(),
       tokensUsed: 0,
