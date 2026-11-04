@@ -1,4 +1,4 @@
-import type { RunStore } from '../runs/store.ts';
+
 
 /**
  * Cezar-GLM factory lifecycle (spec §8).
@@ -10,7 +10,10 @@ import type { RunStore } from '../runs/store.ts';
  */
 
 import type { FactoryLifecycle, FactoryState } from '@open-mercato/cezar-contract';
-import type { RunStatus } from '../runs/store.ts';
+import type { RunStatus, RunStore } from '../runs/store.ts';
+
+/** The slice of the run store the factory lifecycle writer needs (structural, so engines and tests can pass a Pick). */
+export type LifecycleStore = Pick<RunStore, 'updateRun' | 'appendEvent'>;
 
 /** The upstream status a lifecycle stage renders as. Several stages fold into `running`. */
 export function lifecycleStatus(lifecycle: FactoryLifecycle): RunStatus {
@@ -87,16 +90,22 @@ export function isTerminal(lifecycle: FactoryLifecycle): boolean {
  * Persist a lifecycle move: transition-checked, record-first, event-second.
  * Spec §7: "重要状态变更必须在启动副作用前落盘" — the record write (atomic
  * index save) happens before the NDJSON event that narrates it.
+ *
+ * `force` is for RECONCILIATION only (spec §8 interrupted → 恢复既定阶段):
+ * restart recovery jumps from an arbitrary observed stage onto the legal graph
+ * (running → review_ready after a restart found the run already settled), and
+ * the event row — with the from-stage preserved — IS that audit entry. Normal
+ * in-process moves never pass it.
  */
 export function moveLifecycle(
-  store: RunStore,
+  store: LifecycleStore,
   taskId: string,
   factory: FactoryState,
   to: FactoryLifecycle,
-  extra?: { reason?: string; note?: string },
+  extra?: { reason?: string; note?: string; force?: boolean },
 ): { factory: FactoryState; status: RunStatus } {
   const from = factory.lifecycle;
-  assertTransition(from, to);
+  if (!extra?.force) assertTransition(from, to);
   const next: FactoryState = { ...factory, lifecycle: to };
   if (to === 'blocked') next.blockedReason = extra?.reason ?? factory.blockedReason ?? 'blocked';
   if (to !== 'blocked') next.blockedReason = null;
@@ -106,6 +115,7 @@ export function moveLifecycle(
     type: 'factory',
     from,
     to,
+    ...(extra?.force ? { reconciled: true } : {}),
     ...(extra?.reason ? { reason: extra.reason } : {}),
     ...(extra?.note ? { note: extra.note } : {}),
   });

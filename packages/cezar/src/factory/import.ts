@@ -44,20 +44,27 @@ export function composeTaskText(input: { title: string; description: string; sco
 export function preflightItem(
   input: FactoryImportBody['tasks'][number],
   existing: Readonly<Record<string, { taskId: string; requestDigest: string }>>,
-  batchKeys: ReadonlySet<string>,
+  batchKeyCounts: ReadonlyMap<string, number>,
 ): { error?: { code: string; message: string }; duplicateOf?: string } {
+  // Batch import REQUIRES a stable key per item (spec §7 幂等); the single-create
+  // route fills it from the Idempotency-Key header instead.
+  if (!input.key) return { error: { code: 'key_required', message: 'every imported task needs a key (idempotency)' } };
   const entry = existing[input.key];
   if (entry) {
     const digest = canonicalDigest({ ...input, key: undefined });
     if (digest === entry.requestDigest) return { duplicateOf: entry.taskId };
     return { error: { code: 'key_conflict', message: `idempotency key '${input.key}' already exists with a different payload` } };
   }
-  if (batchKeys.has(input.key)) return { error: { code: 'key_conflict', message: `duplicate key in batch: '${input.key}'` } };
+  // The batch map COUNTS keys, so this item's own key does not self-collide;
+  // a genuine duplicate appears with a count > 1.
+  if ((batchKeyCounts.get(input.key) ?? 0) > 1) {
+    return { error: { code: 'key_conflict', message: `duplicate key in batch: '${input.key}'` } };
+  }
   // Dependencies must name keys that exist, are in this batch, or are impossible (unknown) —
   // unknown dependency keys are a hard error (spec §7: 导入器必须校验对应项目实际存在).
   for (const dep of input.dependsOn) {
     if (dep === input.key) return { error: { code: 'self_dependency', message: `task '${input.key}' depends on itself` } };
-    if (!existing[dep] && !batchKeys.has(dep)) {
+    if (!existing[dep] && !batchKeyCounts.has(dep)) {
       return { error: { code: 'unknown_dependency', message: `dependency '${dep}' does not exist in this project or batch` } };
     }
   }
@@ -86,6 +93,7 @@ export function findCycle(tasks: FactoryImportBody['tasks']): string[] | undefin
     return undefined;
   };
   for (const t of tasks) {
+    if (!t.key) continue; // keyless items fail their own preflight; they form no edges
     const cycle = visit(t.key);
     if (cycle) return cycle;
   }
@@ -95,7 +103,7 @@ export function findCycle(tasks: FactoryImportBody['tasks']): string[] | undefin
 export async function importFactoryTasks(
   project: ImportProject,
   body: FactoryImportBody,
-  opts: { homeDir: string; now?: Date },
+  opts: { now?: Date } = {},
 ): Promise<FactoryImportResponse> {
   const now = opts.now ?? new Date();
   const state = FactoryStateStore.open(project.dataDir);
@@ -104,10 +112,18 @@ export async function importFactoryTasks(
   let duplicates = 0;
 
   // ---- whole-batch preflight (spec: 整批先预检) --------------------------------------------
-  const batchKeys = new Set(body.tasks.map((t) => t.key));
+  const batchKeyCounts = new Map<string, number>();
+  for (const k of body.tasks.map((t) => t.key)) {
+    if (!k) continue;
+    batchKeyCounts.set(k, (batchKeyCounts.get(k) ?? 0) + 1);
+  }
   const preflight = new Map<string, ReturnType<typeof preflightItem>>();
   for (const task of body.tasks) {
-    preflight.set(task.key, preflightItem(task, state.tasks, batchKeys));
+    if (!task.key) {
+      preflight.set('', preflightItem(task, state.tasks, batchKeyCounts));
+      continue;
+    }
+    preflight.set(task.key, preflightItem(task, state.tasks, batchKeyCounts));
   }
   const cycle = findCycle(body.tasks);
   if (cycle) {
@@ -131,17 +147,20 @@ export async function importFactoryTasks(
     throw new Error(`no workflow available to run factory tasks (looked for '${DEFAULT_WORKFLOW}')`);
   }
   for (const task of body.tasks) {
-    const check = preflight.get(task.key) ?? {};
+    const check = preflight.get(task.key ?? '') ?? {};
     if (check.duplicateOf) {
       duplicates += 1;
-      items.push({ status: 'duplicate', key: task.key, taskId: check.duplicateOf });
+      items.push({ status: 'duplicate', key: task.key ?? '', taskId: check.duplicateOf });
       continue;
     }
     if (check.error) {
-      items.push({ status: 'error', key: task.key, code: check.error.code, message: check.error.message });
+      items.push({ status: 'error', key: task.key, code: check.error.code, message: check.error.message }); // key may be undefined here — schema allows it on error items
       continue;
     }
     try {
+      // A keyless task already errored in preflight; this guard narrows the type.
+      const key = task.key;
+      if (!key) continue;
       const initialLifecycle: FactoryState['lifecycle'] = task.acceptanceCriteria.length === 0 ? 'needs_spec' : 'queued';
       const run = project.manager.startRun(workflow, {
         task: composeTaskText(task),
@@ -164,12 +183,12 @@ export async function importFactoryTasks(
           checkpointId: null,
           acceptanceProfileId: task.acceptanceProfileId,
           policyVersion: 'v1',
-          key: task.key,
+          key,
           publishMode: task.publishMode,
         },
       });
       state.registerTask({
-        key: task.key,
+        key,
         taskId: run.id,
         requestDigest: canonicalDigest({ ...task, key: undefined }),
         version: 1,
@@ -181,7 +200,7 @@ export async function importFactoryTasks(
         if (record?.factory) moveLifecycle(project.store, run.id, record.factory, 'needs_spec', { note: 'import: no acceptance criteria' });
       }
       created += 1;
-      items.push({ status: 'created', key: task.key, taskId: run.id });
+      items.push({ status: 'created', key, taskId: run.id });
     } catch (err) {
       items.push({
         status: 'error',

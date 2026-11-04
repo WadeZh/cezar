@@ -1404,6 +1404,16 @@ export class RunManager {
   // registering in `active`, so parallel-slot counting is never racy.
   // Order: "Run First" promotions first (newest first), then arrival — see `enqueue()`.
   private readonly queue: string[] = [];
+  /**
+   * Optional dispatch-order override (Cezar-GLM factory task pool, spec
+   * docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §9). Given the STARTABLE queued runs in
+   * queue order, return the one to dequeue, or undefined to start nothing this
+   * sweep. Unset (every cockpit that never heard of the factory): strict FIFO —
+   * the historical `findIndex(startable)` behavior, byte for byte. The pump
+   * keeps every gate (capacity, holds, start-now); the selector only chooses
+   * AMONG runs those gates already admitted.
+   */
+  queueSelector?: (startable: RunRecord[]) => RunRecord | undefined;
   private readonly starting = new Set<string>();
   // Runs cancelled inside that window: there is no `ActiveRun` to flag yet, so the starter checks
   // here once it has one to build (`abandonCancelledStart`).
@@ -2299,7 +2309,28 @@ export class RunManager {
         while (this.queue.length > 0) {
           // FIFO among the runs that CAN start; a held one keeps its place in the queue rather
           // than being dequeued and re-queued (which would churn its position and its record).
-          const next = this.queue.findIndex(startable);
+          // With a `queueSelector` (factory pool), the STARTABLE set is offered to the selector;
+          // the sweep order among them stops being arrival order, nothing else changes.
+          let next = -1;
+          if (this.queueSelector) {
+            const candidates: Array<{ index: number; run: RunRecord }> = [];
+            for (let i = 0; i < this.queue.length; i += 1) {
+              const id = this.queue[i];
+              if (!id || !startable(id)) continue;
+              const run = this.store.getRun(id);
+              if (run) candidates.push({ index: i, run });
+            }
+            if (candidates.length === 0) break; // nothing queued can start right now
+            // No single-candidate fast path: the selector IS a gate (spec §9.1
+            // 所有入口同一闸门) — a lone factory task must still pass paused/
+            // stopped/budget/dependency checks, and its dispatch must count.
+            const picked = this.queueSelector(candidates.map((c) => c.run));
+            const found = picked ? candidates.find((c) => c.run.id === picked.id) : undefined;
+            if (!found) break; // the selector declines every candidate this sweep
+            next = found.index;
+          } else {
+            next = this.queue.findIndex(startable);
+          }
           if (next === -1) break; // nothing queued can start right now
           const runId = this.queue.splice(next, 1)[0];
           if (!runId) break;

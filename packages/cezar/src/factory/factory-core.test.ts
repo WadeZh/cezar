@@ -216,16 +216,17 @@ describe('factory controls', () => {
 describe('factory import preflight', () => {
   it('accepts a fresh key, dedupes an identical payload, conflicts on a different one', () => {
     const existing = { 'demo-1': { taskId: 'r1', requestDigest: canonicalDigest({ ...BASE_TASK, key: undefined }) } };
-    expect(preflightItem(BASE_TASK, existing, new Set()).duplicateOf).toBe('r1');
-    expect(preflightItem({ ...BASE_TASK, title: 'changed' }, existing, new Set()).error?.code).toBe('key_conflict');
-    expect(preflightItem({ ...BASE_TASK, key: 'demo-2' }, existing, new Set(['demo-2'])).error?.code).toBe('key_conflict');
-    expect(preflightItem({ ...BASE_TASK, key: 'demo-2' }, existing, new Set()).error).toBeUndefined();
+    expect(preflightItem(BASE_TASK, existing, new Map()).duplicateOf).toBe('r1');
+    expect(preflightItem({ ...BASE_TASK, title: 'changed' }, existing, new Map()).error?.code).toBe('key_conflict');
+    expect(preflightItem({ ...BASE_TASK, key: 'demo-2' }, existing, new Map([['demo-2', 2]])).error?.code).toBe('key_conflict');
+    // a key appearing ONCE in the batch is not a duplicate of itself
+    expect(preflightItem({ ...BASE_TASK, key: 'demo-2' }, existing, new Map([['demo-2', 1]])).error).toBeUndefined();
   });
 
   it('rejects unknown and self dependencies', () => {
-    expect(preflightItem({ ...BASE_TASK, dependsOn: ['nope'] }, {}, new Set()).error?.code).toBe('unknown_dependency');
-    expect(preflightItem({ ...BASE_TASK, dependsOn: ['demo-1'] }, {}, new Set()).error?.code).toBe('self_dependency');
-    expect(preflightItem({ ...BASE_TASK, dependsOn: ['other-batch'] }, {}, new Set(['other-batch'])).error).toBeUndefined();
+    expect(preflightItem({ ...BASE_TASK, dependsOn: ['nope'] }, {}, new Map()).error?.code).toBe('unknown_dependency');
+    expect(preflightItem({ ...BASE_TASK, dependsOn: ['demo-1'] }, {}, new Map()).error?.code).toBe('self_dependency');
+    expect(preflightItem({ ...BASE_TASK, dependsOn: ['other-batch'] }, {}, new Map([['other-batch', 1]])).error).toBeUndefined();
   });
 
   it('finds cycles across the batch', () => {

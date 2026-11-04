@@ -86,9 +86,10 @@ export type FactoryState = z.infer<typeof factoryStateSchema>;
 
 // ---- task input ------------------------------------------------------------------------------
 
-/** Task input (spec §7 "任务输入必须包含"). No verifiable goal ⇒ the import answers `needs_spec` and nothing runs. */
+/** Task input (spec §7 "任务输入必须包含"). No verifiable goal ⇒ the import answers `needs_spec` and nothing runs.
+ *  `key` is required on batch import; the single-create route fills it from the `Idempotency-Key` header. */
 export const factoryTaskInputSchema = z.object({
-  key: z.string().min(1).max(200),
+  key: z.string().min(1).max(200).optional(),
   title: z.string().min(1).max(200),
   description: z.string().min(1).max(32768),
   /** Pathspec-ish scope entries the task may touch; informational + review guard. */
