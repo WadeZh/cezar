@@ -5,6 +5,8 @@ import { dispatchAllowed, loadFactoryControls, recordTaskStart } from './control
 import { moveLifecycle } from './lifecycle.ts';
 import { FactoryState } from './state.ts';
 import { isEligible, selectNext, SchedulableTask } from './scheduler.ts';
+import { isWallClockExceeded, repairCountFromSteps } from './runner.ts';
+import { resultMdOf, writeResultReport } from './report.ts';
 
 /**
  * Factory dispatch engine (spec §9).
@@ -29,7 +31,7 @@ export interface FactoryProjectHandle {
   id: string;
   root: string;
   dataDir: string;
-  manager: Pick<RunManager, 'promote'>;
+  manager: Pick<RunManager, 'promote' | 'cancel'>;
   store: Pick<RunStore, 'listRuns' | 'getRun' | 'updateRun' | 'appendEvent'>;
 }
 
@@ -166,10 +168,28 @@ export function reconcileProject(project: FactoryProjectHandle, now: Date): numb
   let changes = 0;
   const moves: Array<{ run: RunRecord; to: 'review_ready' | 'failed' | 'cancelled'; note: string }> = [];
   for (const run of project.store.listRuns()) {
-    const factory = run.factory;
+    let factory = run.factory;
     if (!factory) continue;
+    // Repair counter sync (spec §9.2: 恢复、网络重试不得清零修复计数 — the step
+    // record is the single source; the factory field follows it upward only).
+    const repairs = repairCountFromSteps(run.steps, factory);
+    if (repairs !== factory.repairAttemptCount) {
+      factory = { ...factory, repairAttemptCount: repairs };
+      project.store.updateRun(run.id, { factory });
+      run.factory = factory;
+    }
     const lifecycle = factory.lifecycle;
     if (['preparing', 'running', 'verifying', 'reviewing', 'publishing'].includes(lifecycle)) {
+      // Wall clock (spec §9.2): the tick is the enforcer — cancel first (stops
+      // the process tree upstream), then the forced lifecycle records WHY.
+      if (isWallClockExceeded(factory, run, now)) {
+        project.manager.cancel(run.id);
+        moveLifecycle(project.store, run.id, factory, 'failed', {
+          note: `wall-clock timeout after ${factory.timeoutSeconds}s`, force: true,
+        });
+        changes += 1;
+        continue;
+      }
       if (run.status === 'review' || run.status === 'done') {
         moves.push({ run, to: 'review_ready', note: `run settled as ${run.status}` });
       } else if (run.status === 'failed') {
@@ -184,8 +204,15 @@ export function reconcileProject(project: FactoryProjectHandle, now: Date): numb
     // Reconciliation jump: the upstream run settled while the lifecycle still
     // names a mid-flight stage — force the move, the event carries the audit.
     moveLifecycle(project.store, m.run.id, m.run.factory, m.to, { note: m.note, force: true });
+    // The report is written AT SETTLEMENT, from the settled record (spec §15).
+    const markdown = resultMdOf(m.run, m.run.factory);
+    const path = writeResultReport(project.dataDir, m.run.id, markdown);
+    project.store.appendEvent(m.run.id, {
+      type: 'factory',
+      report: path ?? null,
+      note: path ? 'result.md written to artifacts' : 'result.md could not be written',
+    });
     changes += 1;
   }
-  void now;
   return changes;
 }

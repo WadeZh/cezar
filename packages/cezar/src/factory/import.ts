@@ -2,7 +2,10 @@ import type { FactoryImportBody, FactoryImportResponse, FactoryImportResultItem,
 import type { RunManager } from '../workflows/run.ts';
 import type { RunStore } from '../runs/store.ts';
 import { loadWorkflows } from '../workflows/load.ts';
+import { resolveProfile } from './acceptance.ts';
+import { buildFactoryWorkflow } from './runner.ts';
 import { canonicalDigest, FactoryState as FactoryStateStore } from './state.ts';
+import { listProfileIds } from './acceptance.ts';
 import { moveLifecycle } from './lifecycle.ts';
 
 /**
@@ -68,7 +71,27 @@ export function preflightItem(
       return { error: { code: 'unknown_dependency', message: `dependency '${dep}' does not exist in this project or batch` } };
     }
   }
+  // The acceptance profile is checked at preflight (spec §14: 导入器必须校验对应项目实际存在):
+  // a task naming an unresolvable profile would only fail later, at dispatch, invisibly.
+  if (input.acceptanceCriteria.length > 0 && !profileExists(_preflightRoot, input.acceptanceProfileId)) {
+    return {
+      error: {
+        code: 'unknown_profile',
+        message: `acceptance profile '${input.acceptanceProfileId}' does not exist (built-ins: node-standard, python-standard, docs-standard; or .ai/cezar/factory/profiles.json)`,
+      },
+    };
+  }
   return {};
+}
+
+let _preflightRoot: string | undefined;
+/** Set once per import so preflightItem can resolve profiles without a signature change for tests. */
+export function setProfileRoot(root: string): void {
+  _preflightRoot = root;
+}
+function profileExists(root: string | undefined, id: string): boolean {
+  if (!root) return true; // profile existence uncheckable (unit tests) — dispatch re-validates
+  return listProfileIds(root).includes(id);
 }
 
 /** Batch-level cycle check over dependsOn (batch keys only; edges to existing tasks are leaves). */
@@ -112,6 +135,7 @@ export async function importFactoryTasks(
   let duplicates = 0;
 
   // ---- whole-batch preflight (spec: 整批先预检) --------------------------------------------
+  setProfileRoot(project.root);
   const batchKeyCounts = new Map<string, number>();
   for (const k of body.tasks.map((t) => t.key)) {
     if (!k) continue;
@@ -162,7 +186,20 @@ export async function importFactoryTasks(
       const key = task.key;
       if (!key) continue;
       const initialLifecycle: FactoryState['lifecycle'] = task.acceptanceCriteria.length === 0 ? 'needs_spec' : 'queued';
-      const run = project.manager.startRun(workflow, {
+      // Spec §10.1: a task WITH acceptance criteria runs the implement → verify
+      // chain from its trusted profile (repair loop = the workflow's own onFail);
+      // needs_spec tasks keep quick-task until a human completes the criteria.
+      let runWorkflow = workflow;
+      if (initialLifecycle === 'queued') {
+        const profile = resolveProfile(project.root, task.acceptanceProfileId);
+        if (!profile) throw new Error(`acceptance profile '${task.acceptanceProfileId}' vanished between preflight and create`);
+        runWorkflow = buildFactoryWorkflow({
+          taskText: composeTaskText(task),
+          profile,
+          maxRepairAttempts: task.maxRepairAttempts,
+        });
+      }
+      const run = project.manager.startRun(runWorkflow, {
         task: composeTaskText(task),
         factory: {
           schemaVersion: 1,

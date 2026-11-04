@@ -74,11 +74,17 @@ export const graphNodeSchema = z.discriminatedUnion('type', [
   z.object({
     ...nodeBase,
     type: z.literal('check'),
-    command: z.string().min(1),
+    command: z.string().min(1).optional(),
+    /** Shell-less check (Cezar-GLM acceptance profiles): literal argv, XOR with `command`. */
+    argv: z.array(z.string().min(1)).min(1).max(64).optional(),
+    /** Check wall clock: SIGTERM → SIGKILL on expiry, the check fails with exit code -1. */
+    timeoutMs: z.number().int().min(1000).max(24 * 3600 * 1000).optional(),
     /** v1 compatibility: only these non-zero exits are eligible for an onFail retry. */
     retryOn: z.array(z.number().int().positive()).optional(),
     /** The secrets this command may read (see `workflowStepSchema.secrets`). */
     secrets: stepSecretsSchema.optional(),
+  }).refine((n) => Boolean(n.command) !== Boolean(n.argv), {
+    message: 'a check node is `command` (login shell) XOR `argv` (literal arguments), not both',
   }),
   // ---- phase 1c: nodes cezar executes itself (no agent session) ----
   /** Pause for the user's approve / reject (an ask card with two options). */
@@ -457,7 +463,9 @@ export function templatedText(n: GraphNode): string[] {
     case 'agent':
       return [n.prompt ?? ''];
     case 'check':
-      return [n.command];
+      // `argv` entries are literal by construction (no templating) — the spec's
+      // point is that user strings never reach a shell here.
+      return [n.command ?? ''];
     case 'gate.human':
       return [n.message];
     case 'ask-user':
@@ -538,16 +546,23 @@ export function compileV1(steps: readonly WorkflowStepDef[]): WorkflowGraph {
   const startId = fresh('start');
   const endId = fresh('end');
   const nodes: GraphNode[] = [{ id: startId, type: 'start' }];
-  const out = (s: WorkflowStepDef) => `${s.id}.${s.command ? 'pass' : 'done'}`;
+  const out = (s: WorkflowStepDef) => `${s.id}.${s.command || s.argv ? 'pass' : 'done'}`;
   steps.forEach((s, i) => {
-    const { onFail, command, ...rest } = s;
+    const { onFail, command, argv, timeoutMs, ...rest } = s;
+    const check = Boolean(command || argv);
     nodes.push(
-      command
-        ? { ...rest, type: 'check', command, ...(onFail?.retryOn ? { retryOn: onFail.retryOn } : {}) }
+      check
+        ? {
+            ...rest,
+            type: 'check',
+            ...(command ? { command } : { argv: argv! }),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            ...(onFail?.retryOn ? { retryOn: onFail.retryOn } : {}),
+          }
         : { ...rest, type: 'agent' },
     );
     edges.push({ from: i === 0 ? `${startId}.next` : out(steps[i - 1]!), to: s.id });
-    if (command && onFail) {
+    if (check && onFail) {
       const loopId = fresh(`${s.id}-retry`);
       nodes.push({ id: loopId, type: 'loop', max: onFail.max });
       edges.push({ from: `${s.id}.fail`, to: loopId }, { from: `${loopId}.repeat`, to: onFail.retry });

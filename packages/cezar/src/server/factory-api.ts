@@ -1,4 +1,6 @@
 import { Hono } from 'hono';
+import { existsSync, readFileSync } from 'node:fs';
+import { join } from 'node:path';
 import {
   factoryControlActionSchema,
   factoryErrorSchema,
@@ -229,7 +231,10 @@ export function factoryProjectRoutes() {
       const project = c.get('project');
       const run = project.store.getRun(c.req.param('taskId'));
       if (!run?.factory) return c.json(err('no such factory task', 'not_found'), 404);
-      // M2 generates result.md with full evidence; until then the record's own facts.
+      // The settled report lives in the run's artifacts dir (spec §15); an
+      // unfinished run reports its live facts instead of a fabricated verdict.
+      const reportPath = join(project.dataDir, 'artifacts', run.id, 'result.md');
+      const resultMd = existsSync(reportPath) ? readFileSync(reportPath, 'utf8') : null;
       return c.json({
         taskId: run.id,
         lifecycle: run.factory.lifecycle,
@@ -239,8 +244,7 @@ export function factoryProjectRoutes() {
         branch: run.branch ?? null,
         pullRequestUrl: run.pullRequestUrl ?? null,
         error: run.error ?? null,
-        resultMd: null,
-        note: 'full result.md evidence arrives in M2 (spec §15)',
+        resultMd,
       });
     });
 }

@@ -4,6 +4,7 @@ import { WorktreeLifecycleCoordinator } from '../worktree-lifecycle/coordinator.
 import type { RunSubject, WebhookAttentionRequest, TrackerAssociation, UsageWindowsObservation } from '@open-mercato/cezar-contract';
 import { saveUsageWindows } from '../workspace/usage-windows.ts';
 import { probeCodexIdentity, probeCodexUsageWindows } from '../core/codex-usage-probe.ts';
+import { spawnableCommand } from '../core/windows-shim.ts';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { trackerBindingComplete, trackerContextPath, trackerPrompt, trackerTaskContext } from '../server/tracker/task-access.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -254,6 +255,7 @@ const GRAPH_TAKEN_CAP = 500;
 const NODE_SUMMARY_CAP = 4_000;
 import { freshContinuationContext } from './continuation-context.ts';
 
+const CHECK_KILL_GRACE_MS = 4_000;
 const CHECK_OUTPUT_CAP = 20_000;
 
 async function configuredModelProvider(
@@ -6541,7 +6543,7 @@ export class RunManager {
       const checkpoint = this.store.getRun(runId);
       let initializedRetryBudget = false;
       for (const def of workflow.steps) {
-        if (!def.command || !def.onFail) continue;
+        if ((!def.command && !def.argv) || !def.onFail) continue;
         const loopId = graph.edges.find((e) => e.from === `${def.id}.fail`)?.to;
         if (!loopId) continue;
         checkLoops.set(loopId, def.id);
@@ -9665,14 +9667,24 @@ export class RunManager {
     step: WorkflowStepDef,
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
-    const command = step.command as string;
+    // `argv` (Cezar-GLM acceptance profiles, spec §10.3) spawns literal arguments with no
+    // shell — user strings never reach bash. `command` keeps the historical login shell.
+    // `spawnableCommand` unwraps Windows .cmd/.bat shims so a shell-less spawn of `npm`/`npx`
+    // works without a shell (CVE-2024-27980) — the same seam the runner probes use.
+    const shellless = step.argv !== undefined;
+    const argvSpawn = shellless ? spawnableCommand(step.argv![0]!, step.argv!.slice(1)) : undefined;
+    const argvFile = argvSpawn?.[0];
+    const argvArgs = argvSpawn?.[1];
+    const command = shellless ? step.argv!.join(' ') : (step.command as string);
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     const env = await this.checkStepEnv(runId, state, step, emit);
     // A cancel that landed during the read had no child to interrupt; do not spawn one now.
     if (state.cancelled) return { ok: false, output: 'cancelled', exitCode: -1 };
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env });
+      const child = argvFile
+        ? spawn(argvFile, argvArgs, { cwd: state.cwd, env })
+        : spawn('bash', ['-lc', command], { cwd: state.cwd, env });
       state.interrupt = () => child.kill('SIGTERM');
 
       let output = '';
@@ -9684,13 +9696,28 @@ export class RunManager {
       };
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
+      // Wall clock (spec §10.3: 检查必须带超时): SIGTERM, then SIGKILL after a grace —
+      // a hung check fails the step instead of hanging the run forever. exitCode -1 is
+      // the "no verdict" value no retryOn list can name.
+      let timer: NodeJS.Timeout | undefined;
+      if (step.timeoutMs !== undefined) {
+        const killTimer = setTimeout(() => {
+          emit({ type: 'note', stepId: step.id, message: `check timed out after ${step.timeoutMs}ms` });
+          child.kill('SIGTERM');
+          setTimeout(() => child.kill('SIGKILL'), CHECK_KILL_GRACE_MS).unref?.();
+        }, step.timeoutMs);
+        killTimer.unref?.();
+        timer = killTimer;
+      }
       child.on('error', (err) => {
+        if (timer) clearTimeout(timer);
         state.interrupt = () => undefined;
         const message = `failed to spawn: ${err.message}`;
         emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: -1 });
         resolve({ ok: false, output: message, exitCode: -1 });
       });
       child.on('close', (code) => {
+        if (timer) clearTimeout(timer);
         state.interrupt = () => undefined;
         const trimmed = output.trim() || '(no output)';
         // `code` is null when a signal killed the child; -1 then, the same value an
