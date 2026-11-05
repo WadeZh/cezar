@@ -12,7 +12,7 @@
 | Git | 2.33.0.windows.2 | `git --version` |
 | WSL2 | 已安装；可见发行版 `docker-desktop`（版本 2） | `wsl --status` / `wsl -l -v` |
 | OpenCode CLI | **未安装** | `opencode --version` → command not found |
-| gh CLI | **未安装** | `gh --version` → command not found |
+| gh CLI | **已安装 2.103.3**（winget，2026-11-05）；**未登录** | `gh --version` ✓ / `gh auth status` → not logged in |
 | GLM 凭据 | **未配置、未验证** | 无任何 bigmodel/OpenCode 配置文件 |
 
 ## 2. 已验证组合
@@ -31,7 +31,7 @@
 | OpenCode CLI + GLM OpenAI 兼容端点 `https://open.bigmodel.cn/api/coding/paas/v4` | 未验证 | 同上；两协议不可互换（spec §6.1） |
 | `npx @z_ai/coding-helper` 配置助手 | 包可下载（0.1.1，`--version` 实测）；**交互式配置 GLM+OpenCode 未执行** | 仅作为安装文档提示；不写入任何脚本 |
 | WSL2 Ubuntu 内运行 cezar 服务 | 未验证（本机仅有 docker-desktop 发行版） | spec §5 建议项；M5 交付时按实际机器配置 Ubuntu 后再验证 |
-| gh Draft PR 发布链路 | **未验证**（gh 未安装） | `createDraftPr` 在无 gh 时返回 `{ok:false}`（代码保证不抛错）；mock 发布先行 |
+| gh Draft PR 发布链路 | **未验证**（gh 已装、未 `gh auth login`） | `createDraftPr` 在无 gh 时返回 `{ok:false}`（代码保证不抛错）；mock 发布先行 |
 | CodeBuddy（WorkBuddy 的 CLI）runner | **已实现、未 live 验证**：CLI 未安装。实现依据其官方 CLI 参考（与 Claude Code 逐旗标兼容的 stream-json 头less 模式）；fixtures 为 claude 捕获副本，出处记于 `__fixtures__/codebuddy/README.md`。两个未核实旗标：`--session-id`、`--append-system-prompt-file` | 安装后跑 `node scripts/factory/doctor.mjs` → 最小任务实测 → 用真实转录替换 fixtures 并补录本表 |
 | CEZ_DRY_RUN=1 mock 控制台 | 待基线测试覆盖（上游 e2e 即用此模式） | M0 收尾运行 |
 | Windows 原生信号语义 | 代码已核实：Node 在 win32 将 SIGTERM 映射为 TerminateProcess 且**仅杀子进程本身**（`opencode-server-runner.ts:371-379` 无 tree-kill 分支） | factory 硬停止必须自行实现进程树终止（`taskkill /T`），不依赖上游 |
