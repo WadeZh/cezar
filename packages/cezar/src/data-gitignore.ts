@@ -19,6 +19,7 @@ export const DATA_GITIGNORE_ENTRIES = [
   'runs/',
   'webhooks/', // project-private signing keys and delivery snapshots
   'dispatch/', // filesystem channel for dispatched task trees
+  'factory/', // Cezar-GLM pool state: idempotency registry, publish intents, checkpoints (spec docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §7)
   // The per-project attachment library (#929): every named file a user attaches to any task is
   // copied here. It is USER content — a production log, an internal PDF, a brief — so it must
   // never surface in their `git status`, let alone ride a `git add -A` into a public repo. This

@@ -1,0 +1,17 @@
+{
+  "name": "abnormal-end",
+  "scenario": "异常结束：流断开/进程异常退出 —— transient 重试路径，不视为任务失败",
+  "surfacedError": "stream disconnected before completion",
+  "wire": {
+    "session": {
+      "status": "error"
+    },
+    "reason": "stream disconnected"
+  },
+  "expect": {
+    "usageLimit": false,
+    "exhaustion": false,
+    "failureClass": "transient",
+    "resetAt": null
+  }
+}

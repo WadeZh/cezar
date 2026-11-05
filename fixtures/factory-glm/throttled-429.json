@@ -1,0 +1,18 @@
+{
+  "name": "throttled-429",
+  "scenario": "普通限流：429 + rate limit 措辞 —— 退避重试，不是额度耗尽，不 hold 账户（spec §6.3 / A08）",
+  "surfacedError": "API error: 429 Too Many Requests — rate limit exceeded, please retry later",
+  "wire": {
+    "statusCode": 429,
+    "error": {
+      "type": "rate_limit_error",
+      "message": "Requests to the model are being rate limited"
+    }
+  },
+  "expect": {
+    "usageLimit": true,
+    "exhaustion": false,
+    "failureClass": "usage_limit",
+    "resetAt": null
+  }
+}

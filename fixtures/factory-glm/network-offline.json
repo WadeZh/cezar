@@ -1,0 +1,15 @@
+{
+  "name": "network-offline",
+  "scenario": "断网：transport 错误（无 HTTP 状态）—— transient 退避 [30s,120s]，最多 2 次",
+  "surfacedError": "no response from api — fetch failed (connect ECONNREFUSED)",
+  "wire": {
+    "transportError": "fetch failed",
+    "cause": "ECONNREFUSED"
+  },
+  "expect": {
+    "usageLimit": false,
+    "exhaustion": false,
+    "failureClass": "transient",
+    "resetAt": null
+  }
+}

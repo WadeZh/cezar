@@ -1,0 +1,21 @@
+{
+  "name": "success",
+  "scenario": "正常完成：助手消息、用量、turn 结束（成功不是错误，分类不触发）",
+  "surfacedError": "",
+  "wire": {
+    "endpoint": "openai-compatible /api/coding/paas/v4",
+    "assistantMessage": {
+      "role": "assistant",
+      "content": "done",
+      "tokens": {
+        "input": 1200,
+        "output": 340
+      }
+    }
+  },
+  "expect": {
+    "usageLimit": false,
+    "exhaustion": false,
+    "failureClass": "other"
+  }
+}

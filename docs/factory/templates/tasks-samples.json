@@ -1,0 +1,183 @@
+{
+  "$comment": "Cezar-GLM 任务池样例（spec docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §14 三类模板 + §19 ≥9 个小任务）。projectId/profileId 为演示值：导入器校验项目与 profile 实际存在（未知即逐项报错）。scope 是允许触碰的范围提示，不是沙箱边界。导入：POST /api/v1/p/<projectId>/factory/tasks/import，整批预检，≤100 条。",
+  "schemaVersion": 1,
+  "tasks": [
+    {
+      "idempotencyKey": "demo-wind-converter-v1",
+      "title": "增加风速单位换算工具",
+      "description": "在现有工具页面增加 m/s 与 km/h 双向换算（流量网站模板 §14.B）。",
+      "scope": ["src/tools/wind", "tests/wind"],
+      "acceptanceCriteria": [
+        "10 m/s 等于 36 km/h",
+        "36 km/h 等于 10 m/s",
+        "空值、非数值与负值给出清晰校验提示",
+        "项目已有测试与构建通过"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "traffic",
+      "priority": 2,
+      "timeoutSeconds": 3600,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-api-pagination-v1",
+      "title": "给指定 API 增加分页参数校验",
+      "description": "合法分页正常返回；非法值返回指定错误；不改无关接口（软件开发模板 §14.A）。",
+      "scope": ["src/api/list", "tests/api"],
+      "acceptanceCriteria": [
+        "limit/offset 合法时返回 200 与分页数据",
+        "limit=-1 或 offset=非数字时返回 400 与指定错误码",
+        "已有测试全部通过",
+        "无关接口行为不变"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "software",
+      "priority": 1,
+      "timeoutSeconds": 3600,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-weather-qc-v1",
+      "title": "乌兰察布站点温度数据质量检查脚本",
+      "description": "对授权样例数据做质量检查：重复时次、异常单位、缺测编码；输出质量报告（气象科研模板 §14.C，合成/脱敏样例数据）。",
+      "scope": ["research/qc", "research/tests"],
+      "acceptanceCriteria": [
+        "识别并报告重复时次",
+        "识别超出物理范围的单位换算错误（如 60°C 气温）",
+        "缺测编码 -9999 不参与统计",
+        "固定随机种子，两次运行输出一致",
+        "pytest 通过"
+      ],
+      "acceptanceProfileId": "python-standard",
+      "category": "weather",
+      "priority": 2,
+      "timeoutSeconds": 3600,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-weather-baseline-v1",
+      "title": "温度基线实验脚本（小样本可复现）",
+      "description": "按时间划分训练/验证/测试，固定种子训练基线模型，产出可重复指标（结果必须标注为合成数据结论）。",
+      "scope": ["research/baseline"],
+      "acceptanceCriteria": [
+        "按时间顺序划分，测试集不参与调参",
+        "随机种子固定，两次运行指标一致",
+        "输出 data dictionary 与运行配置",
+        "pytest 通过"
+      ],
+      "acceptanceProfileId": "python-standard",
+      "category": "weather",
+      "priority": 3,
+      "dependsOn": ["demo-weather-qc-v1"],
+      "dependencyMode": "review_ready",
+      "timeoutSeconds": 3600,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-web-footer-v1",
+      "title": "工具站页脚版权年份自动更新",
+      "description": "页脚年份从构建时间生成，不硬编码。",
+      "scope": ["src/components/footer"],
+      "acceptanceCriteria": [
+        "页脚渲染当前年份",
+        "已有测试与构建通过"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "traffic",
+      "priority": 3,
+      "timeoutSeconds": 1800,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-lint-fix-v1",
+      "title": "修复 CI 报告的 3 个 lint 错误",
+      "description": "只改 CI 输出列出的 3 处，不引入新规则。",
+      "scope": ["src/utils/format.ts"],
+      "acceptanceCriteria": [
+        "npm run lint 通过",
+        "相关测试不回归"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "software",
+      "priority": 0,
+      "timeoutSeconds": 1800,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-temp-index-doc-v1",
+      "title": "为数据目录补齐字段说明（data dictionary）",
+      "description": "为 research/data 下的合成样例数据补字段说明文档；真实资料不进仓库。",
+      "scope": ["research/data/README.md"],
+      "acceptanceCriteria": [
+        "每个字段一行说明（名称/单位/缺测编码）",
+        "明确标注数据为合成",
+        "git status --porcelain 仅该文件变更"
+      ],
+      "acceptanceProfileId": "docs-standard",
+      "category": "weather",
+      "priority": 3,
+      "timeoutSeconds": 1800,
+      "maxRepairAttempts": 1,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-mobile-viewport-v1",
+      "title": "换算工具移动端适配",
+      "description": "输入框与结果在 375px 宽度不溢出、可操作。",
+      "scope": ["src/tools/wind", "src/styles/mobile.css"],
+      "acceptanceCriteria": [
+        "375px 视口无横向滚动",
+        "按钮可点按区域 ≥ 44px",
+        "构建通过"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "traffic",
+      "priority": 2,
+      "dependsOn": ["demo-wind-converter-v1"],
+      "dependencyMode": "review_ready",
+      "timeoutSeconds": 3600,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-readme-install-v1",
+      "title": "补齐 README 安装与启动说明",
+      "description": "按现有 package.json scripts 补安装/启动/测试三节。",
+      "scope": ["README.md"],
+      "acceptanceCriteria": [
+        "三节齐全且与 scripts 一致",
+        "文档结构检查通过"
+      ],
+      "acceptanceProfileId": "docs-standard",
+      "category": "software",
+      "priority": 3,
+      "timeoutSeconds": 1800,
+      "maxRepairAttempts": 1,
+      "publishMode": "local_review"
+    },
+    {
+      "idempotencyKey": "demo-error-toast-v1",
+      "title": "换算结果错误提示统一",
+      "description": "非法输入的提示样式与站点现有 toast 一致。",
+      "scope": ["src/tools/wind", "src/components/toast"],
+      "acceptanceCriteria": [
+        "非法输入显示统一 toast",
+        "无控制台报错",
+        "构建通过"
+      ],
+      "acceptanceProfileId": "node-standard",
+      "category": "traffic",
+      "priority": 3,
+      "notBefore": "2026-11-06T00:00:00.000Z",
+      "timeoutSeconds": 1800,
+      "maxRepairAttempts": 2,
+      "publishMode": "local_review"
+    }
+  ]
+}
