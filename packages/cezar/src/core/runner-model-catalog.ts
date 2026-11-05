@@ -151,6 +151,7 @@ const RUNNER_LABEL: Record<RunnerId, string> = {
   claude: 'Claude',
   codex: 'Codex',
   opencode: 'OpenCode',
+  codebuddy: 'CodeBuddy',
   cursor: 'Cursor',
   pi: 'pi',
   junie: 'Junie',

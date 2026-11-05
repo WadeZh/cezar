@@ -66,6 +66,7 @@ const CONNECTED_OUTPUT: Record<ProviderId, string> = {
   // `gemini --version`; connected-ness comes from the credentials it can see (gemini-credentials.ts).
   gemini: '0.60.0',
   kimi: 'kimi-code  type=oauth  models=3  source=default',
+    codebuddy: '/tmp/codebuddy',
 };
 
 const DISCONNECTED_OUTPUT: Record<ProviderId, string> = {
@@ -90,6 +91,7 @@ const DISCONNECTED_OUTPUT: Record<ProviderId, string> = {
   antigravity: 'Please sign in',
   gemini: '0.60.0',
   kimi: 'No providers configured.',
+    codebuddy: '/tmp/codebuddy',
 };
 
 const providerForExecutable = (executable: string): ProviderId => {

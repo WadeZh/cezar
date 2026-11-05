@@ -61,6 +61,7 @@ export const RUNNERS: readonly RunnerOption[] = [
   { id: 'antigravity', label: 'antigravity', desc: 'Google Antigravity CLI (agy)' },
   { id: 'gemini', label: 'gemini', desc: 'Gemini CLI (ACP)' },
   { id: 'kimi', label: 'kimi', desc: 'Kimi Code (ACP)' },
+  { id: 'codebuddy', label: 'codebuddy', desc: 'CodeBuddy (WorkBuddy CLI)' },
 ]
 
 export interface ModelPreset {
@@ -137,6 +138,10 @@ export const MODELS_BY_RUNNER: Record<Runner, readonly ModelPreset[]> = {
   ],
   kimi: [
     { id: '', label: 'auto', desc: 'Use your Kimi default model' },
+  ],
+  // CodeBuddy model aliases are account-specific (Tencent Yuanbao lineup) — auto/free text only.
+  codebuddy: [
+    { id: '', label: 'auto', desc: 'Use your CodeBuddy default model' },
   ],
 }
 

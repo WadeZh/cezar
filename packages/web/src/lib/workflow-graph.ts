@@ -313,16 +313,23 @@ export function compileSteps(steps: readonly WorkflowStepDef[]): WorkflowGraph {
   const startId = fresh('start')
   const endId = fresh('end')
   const nodes: WorkflowGraphNode[] = [{ id: startId, type: 'start' }]
-  const out = (s: WorkflowStepDef) => `${s.id}.${s.command ? 'pass' : 'done'}`
+  const out = (s: WorkflowStepDef) => `${s.id}.${s.command || s.argv ? 'pass' : 'done'}`
   steps.forEach((s, i) => {
-    const { onFail, command, ...rest } = s
+    const { onFail, command, argv, timeoutMs, ...rest } = s
+    const check = Boolean(command || argv)
     nodes.push(
-      command
-        ? { ...rest, type: 'check', command, ...(onFail?.retryOn ? { retryOn: onFail.retryOn } : {}) }
+      check
+        ? {
+            ...rest,
+            type: 'check',
+            ...(command ? { command } : { argv: argv! }),
+            ...(timeoutMs !== undefined ? { timeoutMs } : {}),
+            ...(onFail?.retryOn ? { retryOn: onFail.retryOn } : {}),
+          }
         : { ...rest, type: 'agent' },
     )
     edges.push({ from: i === 0 ? `${startId}.next` : out(steps[i - 1]!), to: s.id })
-    if (command && onFail) {
+    if (check && onFail) {
       const loopId = fresh(`${s.id}-retry`)
       nodes.push({ id: loopId, type: 'loop', max: onFail.max })
       edges.push({ from: `${s.id}.fail`, to: loopId }, { from: `${loopId}.repeat`, to: onFail.retry })

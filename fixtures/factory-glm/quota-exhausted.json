@@ -1,0 +1,18 @@
+{
+  "name": "quota-exhausted",
+  "scenario": "套餐额度耗尽：insufficient_quota / exhausted 措辞 —— hold 账户，reset 未知（A09）",
+  "surfacedError": "usage limit reached: insufficient_quota — you have exceeded your current quota, please check your plan and billing details.",
+  "wire": {
+    "statusCode": 429,
+    "error": {
+      "type": "insufficient_quota",
+      "message": "You exceeded your current quota, please check your plan and billing details."
+    }
+  },
+  "expect": {
+    "usageLimit": true,
+    "exhaustion": true,
+    "failureClass": "billing",
+    "resetAt": null
+  }
+}

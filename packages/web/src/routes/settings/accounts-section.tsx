@@ -103,6 +103,7 @@ const PROVIDER_LABEL: Record<ProviderId, string> = {
   antigravity: 'Antigravity',
   gemini: 'Gemini CLI',
   kimi: 'Kimi Code',
+  codebuddy: 'CodeBuddy',
 }
 
 /** The vendor's own install/login instruction, shown when the CLI is not on this machine. */
@@ -118,6 +119,7 @@ const PROVIDER_INSTALL: Record<ProviderId, string> = {
   antigravity: 'https://antigravity.google/docs/cli/',
   gemini: 'npm i -g @google/gemini-cli',
   kimi: 'https://moonshotai.github.io/kimi-code/',
+  codebuddy: 'https://www.workbuddy.ai/docs/cli/',
 }
 
 /** Same vocabulary the Providers card uses — one wording for "is this logged in?". */

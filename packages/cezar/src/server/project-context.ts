@@ -110,6 +110,13 @@ export class ProjectContexts {
     this.semaphore = deps.semaphore ?? new WorkspaceSemaphore();
   }
 
+  /** The shared workspace semaphore (Cezar-GLM factory wake path: `refresh()`
+   *  pumps every manager, which is how a due `notBefore` or a lifted gate gets
+   *  re-evaluated without an unrelated queue event). Read-only on purpose. */
+  get workspaceSemaphore(): WorkspaceSemaphore {
+    return this.semaphore;
+  }
+
   /** The built context for `projectId`, building it on first access.
    *  Throws `ProjectContextError` for unknown ids and missing roots. */
   async context(projectId: string): Promise<ProjectContext> {

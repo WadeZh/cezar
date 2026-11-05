@@ -53,6 +53,7 @@ const RESUME_COMMAND_PREFIX: Record<Runner, string> = {
   antigravity: 'agy --conversation',
   gemini: 'gemini --resume',
   kimi: 'kimi --session',
+  codebuddy: 'codebuddy --resume',
 }
 
 /** The per-backend take-over command. Records without a runner recorded predate the runner

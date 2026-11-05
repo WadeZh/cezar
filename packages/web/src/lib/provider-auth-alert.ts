@@ -18,6 +18,7 @@ export const PROVIDER_LABELS: Record<ProviderId, string> = {
   antigravity: 'Antigravity',
   gemini: 'Gemini CLI',
   kimi: 'Kimi Code',
+  codebuddy: 'CodeBuddy',
 }
 
 export interface ProviderAuthIncident {

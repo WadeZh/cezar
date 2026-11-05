@@ -220,6 +220,10 @@ const MULTI_PROVIDER_PREFIXES: readonly string[] = [
 /** @internal Focused tests mutate a copy of one entry to model future policy changes. */
 export const BACKEND_ALLOW_PREFIXES: Record<AgentBackend, readonly string[]> = {
   claude: ['ANTHROPIC_', 'CLAUDE_'],
+  // CodeBuddy authenticates through its own login store; `CODEBUDDY_*` is its documented
+  // config namespace. NOT `ANTHROPIC_`/`CLAUDE_`: it is a separate product, and granting
+  // Claude's families here would hand it those credentials on any host that has them.
+  codebuddy: ['CODEBUDDY_'],
   'claude-cli': ['ANTHROPIC_', 'CLAUDE_'],
   codex: ['OPENAI_', 'CODEX_', 'AZURE_OPENAI_'],
   cursor: ['CURSOR_'],

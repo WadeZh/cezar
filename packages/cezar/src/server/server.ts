@@ -332,6 +332,9 @@ import type { RepoSync } from '@open-mercato/cezar-contract';
 import { assessedWithoutChanges, reviewGateEnabled } from '../runs/review-gate.ts';
 import { readUiState, uiStatePath } from '../ui-state.ts';
 import { agentHomePaths, cezarHomeDir, expandTilde, isAbsolutePath } from '../paths.ts';
+import { factoryProjectRoutes, factoryWorkspaceRoutes } from './factory-api.ts';
+import { FactoryEngine } from '../factory/engine.ts';
+import { acquireWorkspaceLease, releaseWorkspaceLease } from '../factory/lease.ts';
 import { renameWithRetry } from '../fs-rename.ts';
 import { agentAccountsEnabled, isLoopbackHostHeader, normalizeHostname, resolveCapabilities } from './capabilities.ts';
 import { createSocketHub, type SocketHub, type WsUpgradeVerdict } from './ws.ts';
@@ -8079,7 +8082,59 @@ export function createApp(deps: ServerDeps) {
     .route('/', repoRoutes)
     .route('/', configRoutes)
     .route('/', agentConfigRoutes)
-    .route('/', terminalRoutes);
+    .route('/', terminalRoutes)
+    .route('/', factoryProjectRoutes());
+
+  // ---- chained family: the Cezar-GLM factory task pool (workspace-level) ----
+  // Spec docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §12. Single-mount beside the other
+  // workspace families; the project task routes above carry the per-project
+  // scope. Dispatch itself stays in the upstream pump: the engine only wires a
+  // queueSelector onto every manager (spec §9.1 所有入口同一闸门) and ticks to
+  // reconcile lifecycles and wake the pump for due notBefore gates.
+  const factoryProjectIds = () => [...new Set([bootContext.id, ...contexts.ids()])];
+  const factoryProjectById = (id: string): ProjectContext | undefined =>
+    id === bootContext.id ? bootContext : contexts.peek(id);
+  const factoryEngine = new FactoryEngine({
+    homeDir: cezarHomeDir(),
+    projects: () => factoryProjectIds().flatMap((id) => {
+      const project = factoryProjectById(id);
+      return project ? [project] : [];
+    }),
+    wake: () => contexts.workspaceSemaphore.refresh(),
+  });
+  // Workspace dispatch lease (spec §11.1): exactly one live process runs the
+  // factory engine and counts budgets; the loser stays a passive reader.
+  void acquireWorkspaceLease(cezarHomeDir()).then((held) => {
+    if (held) factoryEngine.start();
+  });
+  deps.onDispose?.(() => factoryEngine.stop());
+  // Wire the selector onto every manager as its context builds (boot included).
+  const offFactoryBuilt = contexts.onContextBuilt((ctx) => {
+    ctx.manager.queueSelector = factoryEngine.selectorFor({
+      id: ctx.id,
+      root: ctx.root,
+      dataDir: ctx.dataDir,
+      manager: ctx.manager,
+      store: ctx.store,
+    });
+  });
+  deps.onDispose?.(offFactoryBuilt);
+  deps.onDispose?.(() => releaseWorkspaceLease());
+  bootContext.manager.queueSelector = factoryEngine.selectorFor({
+    id: bootContext.id,
+    root: bootContext.root,
+    dataDir: bootContext.dataDir,
+    manager: bootContext.manager,
+    store: bootContext.store,
+  });
+
+  const factoryWorkspace = factoryWorkspaceRoutes({
+    homeDir: cezarHomeDir(),
+    projects: () => factoryProjectIds().flatMap((id) => {
+      const project = factoryProjectById(id);
+      return project ? [project] : [];
+    }),
+  });
 
   // ---- chained family: the cross-project run index (workspace-level) -------
   /**
@@ -8387,7 +8442,8 @@ export function createApp(deps: ServerDeps) {
     .route('/', runsIndexRoutes)
     .route('/', dashboardRoutes(dashboard, () => ({ tokens: capabilities().tokenUsageMetrics, cost: capabilities().costMetrics }), () => capabilities().automations))
     .route('/', workspaceEventsRoutes)
-    .route('/', telemetryRoutes);
+    .route('/', telemetryRoutes)
+    .route('/', factoryWorkspace);
 
   // ---- mount ---------------------------------------------------------------
   // Scoped first, then the unscoped alias bound to the boot project. The paths are disjoint (no
@@ -8747,6 +8803,7 @@ export function quoteResumeBin(bin: string): string | null {
 const RESUME_COMMANDS: Record<RunnerId, (sessionId: string) => string | null> = {
   claude: (sessionId) => `claude --resume ${sessionId}`,
   codex: (sessionId) => `codex resume ${sessionId}`,
+  codebuddy: (sessionId) => `codebuddy --resume ${sessionId}`,
   opencode: (sessionId) => `opencode --session ${sessionId}`,
   cursor: (sessionId) => {
     const bin = quoteResumeBin(resolveCursorAgentBin());

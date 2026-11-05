@@ -34,6 +34,7 @@ export const PROVIDERS = [
   // No login subcommand: `/auth` inside the interactive CLI, or GEMINI_API_KEY in the environment.
   { id: 'gemini', label: 'Gemini CLI', login: 'gemini' },
   { id: 'kimi', label: 'Kimi Code', login: 'kimi login' },
+  { id: 'codebuddy', label: 'CodeBuddy', login: 'codebuddy login' },
 ] as const
 
 const providerWriteState = <T,>(value: T): Record<ProviderId, T> => ({
@@ -48,6 +49,7 @@ const providerWriteState = <T,>(value: T): Record<ProviderId, T> => ({
   antigravity: value,
   gemini: value,
   kimi: value,
+  codebuddy: value,
 })
 
 const STATUS_PRESENTATION = {
