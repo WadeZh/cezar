@@ -366,6 +366,7 @@ const PROVIDER_LABEL: Record<ThreadProviderAuthRequired['provider'], string> = {
   antigravity: 'Antigravity CLI',
   gemini: 'Gemini CLI',
   kimi: 'Kimi Code',
+  codebuddy: 'CodeBuddy',
 }
 
 /** Persisted recovery guidance for an authoritative runtime authentication rejection. */
@@ -439,6 +440,8 @@ function AccountAuthRequiredCard({
  *  update the way they were installed, so the card says so instead of offering a 409. */
 const SELF_UPDATING: Record<ThreadProviderAuthRequired['provider'], boolean> = {
   claude: true, codex: false, junie: false, opencode: true, cursor: true, pi: false, copilot: false, omp: false, antigravity: false, gemini: false, kimi: false,
+  // No verified self-update command for CodeBuddy - the card points at how it was installed.
+  codebuddy: false,
 }
 
 /** Follows an agent error saying its CLI is too old: hands the CLI's own update to a terminal,

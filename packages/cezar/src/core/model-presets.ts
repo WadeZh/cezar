@@ -32,6 +32,9 @@ export const KNOWN_PRESETS_BY_RUNNER: Record<RunnerId, readonly string[]> = {
   claude: ['fable', 'opus', 'sonnet', 'haiku'],
   codex: ['gpt-5.1-codex', 'gpt-5.1-codex-mini', 'gpt-5-codex'],
   opencode: [],
+  // CodeBuddy model aliases are account-specific (Tencent Yuanbao models) — free text, no
+  // hard-coded vendor list that one release makes wrong.
+  codebuddy: [],
   // Cursor models are discovered from the CLI / Settings — no hard-coded presets
   // that could conflict with another runner's ids.
   cursor: [],

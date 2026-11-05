@@ -26,6 +26,8 @@ test:unit 的 3 个失败全部是 `spawnSync /bin/sh ENOENT`（`test/unit/test-
 ### M2 期间补充观察（2026-11-05）
 - `graph-run.test.ts` / `check-retry-on.test.ts` 在 Windows 上 afterEach `rmSync` 出现 **EBUSY 清理失败**（断言全部通过，失败数随机器负载在 3-6 间浮动；上游原版同跑 3-4 个）——既有平台噪声，非 factory 改动引入（改动仅为 command 检查路径增加 unref'd 超时定时器与 argv 分支）。
 
+- `runner-union.test.ts` 的"no source file spells the runner set"在 Windows 必然失败：`relative()` 产出反斜杠路径，`ALLOWED_LITERAL_SITES`（正斜杠）全部失配 —— 上游既有平台缺陷（offender 文件集与 Linux 豁免清单完全一致）。workbuddy 适配前后该测试 offender 集合不变（均为 9 个已豁免文件）。
+
 ### 判定方法
 - 失败文件与 factory 增量（contract/factory.ts、store.ts/run.ts 的 optional `factory` 字段）无交集；factory 字段为纯 optional + `.catch(undefined)`，typecheck 全绿。
 - 超时类失败与用例内容无关（同文件重跑波动）——按 AGENTS.md 要求如实记录，不掩盖也不武断归因"与本次无关"。

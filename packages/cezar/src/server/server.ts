@@ -8803,6 +8803,7 @@ export function quoteResumeBin(bin: string): string | null {
 const RESUME_COMMANDS: Record<RunnerId, (sessionId: string) => string | null> = {
   claude: (sessionId) => `claude --resume ${sessionId}`,
   codex: (sessionId) => `codex resume ${sessionId}`,
+  codebuddy: (sessionId) => `codebuddy --resume ${sessionId}`,
   opencode: (sessionId) => `opencode --session ${sessionId}`,
   cursor: (sessionId) => {
     const bin = quoteResumeBin(resolveCursorAgentBin());

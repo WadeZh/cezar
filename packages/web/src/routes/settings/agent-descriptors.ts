@@ -195,6 +195,12 @@ export const AGENT_DESCRIPTORS: AgentDescriptor[] = [
       group('kimi', 'memory', 'Memory & instructions'),
     ],
   },
+  {
+    id: 'codebuddy',
+    label: 'CodeBuddy',
+    note: 'WorkBuddy 的 CLI（Claude-Code 兼容 stream-json）。其 ~/.codebuddy 配置布局未核实，暂不提供配置文件编辑；账号经 codebuddy login 登录。',
+    groups: [],
+  },
 ]
 
 export function descriptorFor(agent: Runner): AgentDescriptor {

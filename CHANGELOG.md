@@ -9,6 +9,9 @@ Incremental task-pool layer per `docs/CEZAR_GLM_DEVELOPMENT_SPEC.md` — everyth
 - web: `/p/:projectId/factory` page — counts, budget meter, holds with explicit 未知, task table with per-task actions.
 - ops: `scripts/factory/{doctor,start,stop,status,backup,restore,fault-drill}.mjs` + `install-autostart.ps1` (schtasks, log-on, hidden) + `docs/factory/README.md` + GLM error fixtures + 10 task samples.
 
+## ✨ 新增（workbuddy 适配）
+- ✨ `codebuddy` runner：WorkBuddy 的 CodeBuddy CLI 作为一等后端。继承 Claude Code 头less stream-json 线路（官方文档逐旗标兼容），新增的只是身份——backend id、`CEZ_CODEBUDDY_BIN`、`~/.codebuddy` home、探测提示、composer/设置页条目、`codebuddy --resume` 接管命令、PRIVATE_MCP 白名单。fixtures 为 claude 捕获副本（live 采集待 CLI 安装，见 docs/COMPATIBILITY.md §3）。
+
 ## 复用了什么
 Upstream, unchanged: run store + NDJSON, semaphore/pump/holds, worktrees, workflow engine (the repair loop IS an inline steps workflow), error taxonomy (429≠exhaustion), auto-resume, agent-env allowlist, `createDraftPr` (adopt-existing-PR), recover() reconciliation. No second scheduler, no second store, no new deps.
 

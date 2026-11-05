@@ -206,8 +206,9 @@ import {
 
 /** Backends whose runner honors `resume` (AgentRunSpec) — graph `session.continue` and the
  *  verdict nudge need it. OpenCode always starts a new session; Cursor has no resume yet; omp resumes
- *  its RPC session (#1139); Gemini resumes through ACP `session/load` (#581). */
-const RESUMABLE_BACKENDS: ReadonlySet<RunnerId> = new Set<RunnerId>(['claude', 'codex', 'pi', 'omp', 'gemini']);
+ *  its RPC session (#1139); Gemini resumes through ACP `session/load` (#581). CodeBuddy documents
+ *  `--resume <id>` and rides Claude's arg path (codebuddy-runner.ts). */
+const RESUMABLE_BACKENDS: ReadonlySet<RunnerId> = new Set<RunnerId>(['claude', 'codex', 'pi', 'omp', 'gemini', 'codebuddy']);
 /**
  * The reply to a one-question ask card without the card's own framing: a click on an option
  * sends `<header>: <label>` (`web/src/routes/task-thread/ask-card.tsx` `formatAnswer`), a typed

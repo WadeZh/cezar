@@ -80,6 +80,9 @@ export const PROFILE_ENV_VAR: Record<ProviderId, string | null> = {
   antigravity: null,
   gemini: null,
   kimi: 'KIMI_CODE_HOME',
+  // CodeBuddy documents no home-relocation variable (`~/.codebuddy` is fixed); second
+  // accounts are therefore not offerable until the CLI documents one.
+  codebuddy: null,
 };
 
 /** Providers that can carry more than one account — what the UI offers "Add account" for. */
@@ -144,4 +147,5 @@ const PROFILE_DIR_MARKERS: Record<ProviderId, readonly string[]> = {
   // Same as pi: `PROFILE_ENV_VAR.gemini === null`, kept only for exhaustiveness.
   gemini: [],
   kimi: ['config.toml', 'credentials'],
+  codebuddy: [],
 };
