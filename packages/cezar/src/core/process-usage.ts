@@ -159,6 +159,17 @@ export function currentUsage(runId: string): ProcessUsage | undefined {
   return entries.get(runId)?.last;
 }
 
+/** The registered root pid of every tracked run (Cezar-GLM hard stop, spec
+ *  docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §13.3: 停止不能只杀父 PID — the tree
+ *  killer needs the ROOT, and this registry is where the live roots live). */
+export function registeredRunPids(): Record<string, number> {
+  const out: Record<string, number> = {};
+  for (const [runId, entry] of entries) {
+    if (Number.isSafeInteger(entry.pid) && entry.pid > 0) out[runId] = entry.pid;
+  }
+  return out;
+}
+
 /** Timestamp belongs to successful sampling, never to a later HTTP/SSE read. */
 export function currentTimedUsage(runId: string): Omit<DashboardTelemetrySample, 'projectId' | 'runId'> | undefined {
   const entry = entries.get(runId);

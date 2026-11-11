@@ -134,6 +134,9 @@ export const BACKEND_MODEL_MAP: Readonly<Record<AgentBackend, BackendModelMap>> 
   // its own aliases are already `provider/model`-shaped (`kimi-code/k3`). No default provider, so
   // a bare alias passes through unchanged.
   kimi: {},
+  // CodeBuddy's `--model` takes "an alias, or the full model name" (its CLI reference) —
+  // no provider-qualified convention is documented, so a bare id passes through unchanged.
+  codebuddy: {},
 };
 
 const SLASH = '/';

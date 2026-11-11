@@ -50,6 +50,8 @@ export interface AgentHomePaths {
   gemini: string;
   /** `$KIMI_CODE_HOME` or `~/.kimi-code` */
   kimi: string;
+  /** `~/.codebuddy` — fixed (the CLI documents `--bg` logs under `~/.codebuddy/logs/`); no relocation var */
+  codebuddy: string;
 }
 
 export interface ConfigFileDef {

@@ -47,6 +47,15 @@ export const workflowStepSchema = z
     bashAllowlist: z.array(z.string()).optional(),
     // check step
     command: z.string().optional(),
+    /** Check step without a shell: spawn `argv[0]` with the remaining elements as literal
+     *  arguments (no `bash -lc`, no string interpolation). The Cezar-GLM factory builds this
+     *  from a trusted acceptance profile (spec docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §10.3:
+     *  调用使用参数数组); hand-written YAML may use it too. XOR with `command`. */
+    argv: z.array(z.string().min(1)).min(1).max(64).optional(),
+    /** Check-step wall clock (factory acceptance profiles REQUIRE one; hand-written YAML may
+     *  opt in). On expiry the child gets SIGTERM then SIGKILL and the check fails with exit
+     *  code -1 — the same verdict an unspawnable command earns, and one no `retryOn` names. */
+    timeoutMs: z.number().int().min(1000).max(24 * 3600 * 1000).optional(),
     onFail: z
       .object({
         retry: z.string().min(1),
@@ -66,10 +75,13 @@ export const workflowStepSchema = z
      *  load time — the one place YAML could try to route a secret to a backend. */
     secrets: stepSecretsSchema.optional(),
   })
-  .refine((s) => Boolean(s.command) !== Boolean(s.prompt ?? s.skill), {
-    message: 'a step is either an agent step (prompt/skill) or a check step (command), not both',
+  .refine((s) => Boolean(s.command || s.argv) !== Boolean(s.prompt ?? s.skill), {
+    message: 'a step is either an agent step (prompt/skill) or a check step (command or argv), not both',
   })
-  .refine((s) => !s.secrets || Boolean(s.command), {
+  .refine((s) => !(s.command && s.argv), {
+    message: 'a check step is `command` (login shell) XOR `argv` (literal arguments), not both',
+  })
+  .refine((s) => !s.secrets || Boolean(s.command || s.argv), {
     message: 'secrets: is for check steps only — an agent step never receives a secret',
   });
 
@@ -156,7 +168,7 @@ export function skillStackOf(steps: WorkflowStepDef[]): string[] | null {
 }
 
 export function stepKind(step: WorkflowStepDef): 'agent' | 'check' {
-  return step.command ? 'check' : 'agent';
+  return step.command || step.argv ? 'check' : 'agent';
 }
 
 /**

@@ -294,7 +294,12 @@ export function TasksOverview({
       {/* Desktop header. Below `md` the shell's top bar already says "Tasks", and the drawer
           carries the shared Active/Archived tabs — repeating them here would be a third copy. */}
       <header className="sticky top-0 z-10 hidden h-14 shrink-0 items-center gap-3 border-b border-border bg-background px-5 md:flex">
-        <h1 className="text-base font-semibold">Tasks</h1>
+        <h1 className="text-base font-semibold">
+          Tasks
+          <Link to="factory" className="text-muted-foreground ml-3 text-xs font-normal hover:underline" data-testid="tasks-factory-link">
+            任务池
+          </Link>
+        </h1>
         <div className="inline-flex gap-0.5 rounded-md bg-muted p-[3px]">
           <OverviewTab view="active" current={view} onSelect={onViewChange} count={counts.active}>
             Active

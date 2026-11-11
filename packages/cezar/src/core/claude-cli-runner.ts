@@ -7,6 +7,7 @@ import { dirname, join, resolve as resolvePath } from 'node:path';
 import type {
   AgentEvent,
   AgentRunResult,
+  AgentBackend,
   AgentRunSpec,
   AgentRunner,
   AgentSession,
@@ -103,7 +104,9 @@ export function resolveClaudeExecutable(override?: string): string {
  * came from @cezar/core's `ClaudeCodeCliRunner`.
  */
 export class ClaudeCliRunner implements AgentRunner {
-  readonly backend = 'claude' as const;
+  // AgentBackend-typed, not the literal: CodeBuddyRunner subclasses this class and
+  // re-identifies (`codebuddy`) — the wire protocol is shared, the identity is not.
+  readonly backend: AgentBackend = 'claude';
 
   private readonly bin: string;
   private readonly timeoutMs: number;
@@ -156,7 +159,12 @@ export class ClaudeCliRunner implements AgentRunner {
     // byte-identical); the channel is `opts.onUiEvent` (RunManager wiring
     // lands in R2 step 2.1). The mapper never throws, but a defect in it
     // must still never disturb the v1 stream — hence the belt-and-braces try.
-    let uiState = createClaudeUiState({ fallbackSessionId: spec.sessionId });
+    // 'claude-cli' (the legacy id this class folds to 'claude' already) is not a UiBackend;
+    //  every other value of this.backend is.
+    let uiState = createClaudeUiState({
+      fallbackSessionId: spec.sessionId,
+      backend: this.backend === 'claude-cli' ? 'claude' : this.backend,
+    });
     const emitUi = (map: (state: typeof uiState) => ClaudeUiMapping): void => {
       try {
         const mapped = map(uiState);
@@ -545,7 +553,7 @@ export function isClaudeMissingSessionError(message: string): boolean {
 }
 
 /** Path to the bundled mock (`scripts/mock-claude.mjs`), for CEZ_DRY_RUN=1. */
-function mockClaudePath(): string {
+export function mockClaudePath(): string {
   const here = dirname(fileURLToPath(import.meta.url));
   // here = <pkg>/dist/core (built) or <pkg>/src/core (tsx dev).
   return resolvePath(here, '..', '..', 'scripts', 'mock-claude.mjs');

@@ -44,6 +44,7 @@ export async function detectEnvironment(): Promise<BackendCheck[]> {
     probeOmp(),
     probeGemini(),
     probeKimi(),
+    probeCodeBuddy(),
     probeGh(),
     probeGit(),
   ]);
@@ -342,6 +343,28 @@ async function probeKimi(): Promise<BackendCheck> {
       name: 'kimi',
       available: false,
       hint: 'optional: install Kimi Code (https://moonshotai.github.io/kimi-code/) and run `kimi login` to use the Kimi runner',
+    };
+  }
+}
+
+async function probeCodeBuddy(): Promise<BackendCheck> {
+  if (process.env.CEZ_DRY_RUN === '1') {
+    return { name: 'codebuddy', available: true, version: 'mock (CEZ_DRY_RUN=1)' };
+  }
+  const bin = process.env.CEZ_CODEBUDDY_BIN || 'codebuddy';
+  try {
+    const { stdout } = await exec(bin, ['--version'], { timeout: 10_000 });
+    return {
+      name: 'codebuddy',
+      available: true,
+      version: stdout.trim(),
+      hint: 'if not authenticated, run `codebuddy login`',
+    };
+  } catch {
+    return {
+      name: 'codebuddy',
+      available: false,
+      hint: "optional: install CodeBuddy (WorkBuddy's CLI — https://www.workbuddy.ai/docs/cli/) to use the CodeBuddy runner",
     };
   }
 }

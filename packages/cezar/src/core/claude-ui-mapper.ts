@@ -24,26 +24,16 @@
  * the two id spaces then drift silently — updates land on the wrong row.
  */
 
-import type {
-  FileDiff,
-  PlanEntry,
-  PlanStatus,
-  StopReason,
-  TokenUsage,
-  ToolLocation,
-  UiEvent,
-  UiMessageItem,
-  UiReasoningItem,
-  UiSessionStartedEvent,
-  UiToolItem,
-  UiTurnCompletedEvent,
-  UiUsageUpdatedEvent,
-} from './ui-events.ts';
+import type { FileDiff, PlanEntry, PlanStatus, StopReason, TokenUsage, ToolLocation, UiBackend, UiEvent, UiMessageItem, UiReasoningItem, UiSessionStartedEvent, UiToolItem, UiTurnCompletedEvent, UiUsageUpdatedEvent } from './ui-events.ts';
 import { toolDisplay } from './tool-display.ts';
 
 export interface ClaudeUiMapperState {
   /** Used when `system/init` lacks `session_id` (the dry-run mock does). */
   readonly fallbackSessionId?: string;
+  /** The emitting runner's backend id (`session.started.backend`). The wire is
+   *  Claude's but the IDENTITY is the runner's — CodeBuddyRunner shares this
+   *  mapper and must not be labelled claude. Defaults to 'claude'. */
+  readonly backend?: UiBackend;
   /** True once `system/init` produced `session.started`. */
   readonly sessionStarted: boolean;
   /** Turns begun before init arrived — their `turn.started` is queued so
@@ -91,9 +81,10 @@ export interface ClaudeUiMapping {
   state: ClaudeUiMapperState;
 }
 
-export function createClaudeUiState(opts: { fallbackSessionId?: string } = {}): ClaudeUiMapperState {
+export function createClaudeUiState(opts: { fallbackSessionId?: string; backend?: UiBackend } = {}): ClaudeUiMapperState {
   return {
     fallbackSessionId: opts.fallbackSessionId,
+    backend: opts.backend,
     sessionStarted: false,
     pendingTurnIds: [],
     turnSeq: 0,
@@ -148,7 +139,7 @@ function mapInit(msg: Record<string, unknown>, state: ClaudeUiMapperState): Clau
   const event: UiSessionStartedEvent = {
     type: 'session.started',
     sessionId: str(msg.session_id) ?? state.fallbackSessionId ?? '',
-    backend: 'claude',
+    backend: state.backend ?? 'claude',
   };
   const model = str(msg.model);
   if (model !== undefined) event.model = model;

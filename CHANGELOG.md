@@ -1,3 +1,25 @@
+# Cezar-GLM factory pool (branch `factory/main`, base 71e2eb18, 2026-11-05)
+
+Incremental task-pool layer per `docs/CEZAR_GLM_DEVELOPMENT_SPEC.md` — everything below is ADDITIVE: old run records, routes, workflows and the zero-config cockpit keep byte-identical behavior (a run without a `factory` object is untouched).
+
+## 改了什么
+- contract/cezar: optional `factory` object on RunRecord + the factory REST namespace (`/api/v1/factory/*`, project-scoped tasks CRUD/import/actions/report, workspace status/pause/stop/resume/usage), inventoried in BACKWARD_COMPATIBILITY.md §2.
+- factory/: batch import (preflight, idempotency keys, cycle refusal), lifecycle state machine beside the upstream status (audited transitions), pump-level `queueSelector` hook (default stays byte-identical FIFO; the pool adds user-FIFO precedence, P0-first, 6h aging to P1, WFQ 5:3:2 category rotation), acceptance profiles resolved to shell-less argv checks with required timeouts, wall-clock budget, result.md reports, workspace dispatch lease, per-run checkpoints, idempotent publish intent (adopt-don't-recreate), hard stop (tree kill, 10s budget, safe-block on uncertainty).
+- workflows: check steps accept `argv` (literal arguments, no shell) XOR `command`, and `timeoutMs`.
+- web: `/p/:projectId/factory` page — counts, budget meter, holds with explicit 未知, task table with per-task actions.
+- ops: `scripts/factory/{doctor,start,stop,status,backup,restore,fault-drill}.mjs` + `install-autostart.ps1` (schtasks, log-on, hidden) + `docs/factory/README.md` + GLM error fixtures + 10 task samples.
+
+## ✨ 新增（workbuddy 适配）
+- ✨ `codebuddy` runner：WorkBuddy 的 CodeBuddy CLI 作为一等后端。继承 Claude Code 头less stream-json 线路（官方文档逐旗标兼容），新增的只是身份——backend id、`CEZ_CODEBUDDY_BIN`、`~/.codebuddy` home、探测提示、composer/设置页条目、`codebuddy --resume` 接管命令、PRIVATE_MCP 白名单。fixtures 为 claude 捕获副本（live 采集待 CLI 安装，见 docs/COMPATIBILITY.md §3）。
+
+## 复用了什么
+Upstream, unchanged: run store + NDJSON, semaphore/pump/holds, worktrees, workflow engine (the repair loop IS an inline steps workflow), error taxonomy (429≠exhaustion), auto-resume, agent-env allowlist, `createDraftPr` (adopt-existing-PR), recover() reconciliation. No second scheduler, no second store, no new deps.
+
+## 仍有什么限制
+- live GLM/gh 链路未验收（OpenCode/gh/凭据未配置，见 docs/COMPATIBILITY.md §5）；8h live 与 72h mock 长跑未执行。
+- 额度未知探测闸（单探测任务）未实现 —— hold + auto-resume 已覆盖排队等待。
+- 无人值守隔离未声明：spec §13 验收前仅为有人监督试运行。
+
 # 0.18.0 (2026-10-31)
 
 ## Highlights

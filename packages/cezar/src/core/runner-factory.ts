@@ -6,6 +6,7 @@ import { JunieRunner } from './junie-runner.ts';
 import { CopilotAcpRunner } from './copilot-acp-runner.ts';
 import { KimiRunner } from './kimi-runner.ts';
 import { OpencodeServerRunner } from './opencode-server-runner.ts';
+import { CodeBuddyRunner } from './codebuddy-runner.ts';
 import { CursorAgentRunner } from './cursor-agent-runner.ts';
 import { GeminiAcpRunner } from './gemini-acp-runner.ts';
 import { PiRunner } from './pi-runner.ts';
@@ -29,6 +30,8 @@ function createBareRunner(backend: AgentBackend | RunnerId | undefined): AgentRu
       return new CodexAppServerRunner();
     case 'opencode':
       return new OpencodeServerRunner();
+    case 'codebuddy':
+      return new CodeBuddyRunner();
     case 'cursor':
       return new CursorAgentRunner();
     case 'pi':

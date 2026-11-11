@@ -4,6 +4,7 @@ import { WorktreeLifecycleCoordinator } from '../worktree-lifecycle/coordinator.
 import type { RunSubject, WebhookAttentionRequest, TrackerAssociation, UsageWindowsObservation } from '@open-mercato/cezar-contract';
 import { saveUsageWindows } from '../workspace/usage-windows.ts';
 import { probeCodexIdentity, probeCodexUsageWindows } from '../core/codex-usage-probe.ts';
+import { spawnableCommand } from '../core/windows-shim.ts';
 import { TrackerAgentBindingError } from '../server/tracker/agent-credentials.ts';
 import { trackerBindingComplete, trackerContextPath, trackerPrompt, trackerTaskContext } from '../server/tracker/task-access.ts';
 import { createHash, randomUUID } from 'node:crypto';
@@ -205,8 +206,9 @@ import {
 
 /** Backends whose runner honors `resume` (AgentRunSpec) — graph `session.continue` and the
  *  verdict nudge need it. OpenCode always starts a new session; Cursor has no resume yet; omp resumes
- *  its RPC session (#1139); Gemini resumes through ACP `session/load` (#581). */
-const RESUMABLE_BACKENDS: ReadonlySet<RunnerId> = new Set<RunnerId>(['claude', 'codex', 'pi', 'omp', 'gemini']);
+ *  its RPC session (#1139); Gemini resumes through ACP `session/load` (#581). CodeBuddy documents
+ *  `--resume <id>` and rides Claude's arg path (codebuddy-runner.ts). */
+const RESUMABLE_BACKENDS: ReadonlySet<RunnerId> = new Set<RunnerId>(['claude', 'codex', 'pi', 'omp', 'gemini', 'codebuddy']);
 /**
  * The reply to a one-question ask card without the card's own framing: a click on an option
  * sends `<header>: <label>` (`web/src/routes/task-thread/ask-card.tsx` `formatAnswer`), a typed
@@ -254,6 +256,7 @@ const GRAPH_TAKEN_CAP = 500;
 const NODE_SUMMARY_CAP = 4_000;
 import { freshContinuationContext } from './continuation-context.ts';
 
+const CHECK_KILL_GRACE_MS = 4_000;
 const CHECK_OUTPUT_CAP = 20_000;
 
 async function configuredModelProvider(
@@ -1030,6 +1033,10 @@ export interface StartRunInput {
   /** Internal (#1300): this job resumes the agent step a usage limit interrupted. Set only by
    *  `fireAutoResume` (and a restart that revives that queued job), never derived in `execute`. */
   usageLimitResume?: boolean;
+  /** Cezar-GLM factory extension (docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §7): the task-pool state
+   *  persisted verbatim on the record at creation. Internal: only the factory import/creation
+   *  routes set it; `POST /runs` has no such field. */
+  factory?: RunRecord['factory'];
 }
 
 /**
@@ -1400,6 +1407,16 @@ export class RunManager {
   // registering in `active`, so parallel-slot counting is never racy.
   // Order: "Run First" promotions first (newest first), then arrival — see `enqueue()`.
   private readonly queue: string[] = [];
+  /**
+   * Optional dispatch-order override (Cezar-GLM factory task pool, spec
+   * docs/CEZAR_GLM_DEVELOPMENT_SPEC.md §9). Given the STARTABLE queued runs in
+   * queue order, return the one to dequeue, or undefined to start nothing this
+   * sweep. Unset (every cockpit that never heard of the factory): strict FIFO —
+   * the historical `findIndex(startable)` behavior, byte for byte. The pump
+   * keeps every gate (capacity, holds, start-now); the selector only chooses
+   * AMONG runs those gates already admitted.
+   */
+  queueSelector?: (startable: RunRecord[]) => RunRecord | undefined;
   private readonly starting = new Set<string>();
   // Runs cancelled inside that window: there is no `ActiveRun` to flag yet, so the starter checks
   // here once it has one to build (`abandonCancelledStart`).
@@ -1963,6 +1980,7 @@ export class RunManager {
       worktree: !group && !input.dispatchIntent && !input.forkRef && input.worktree === false ? false : undefined,
       groupId: group?.groupId,
       variant: group?.variant,
+      factory: input.factory,
       steps: workflow.graph
         ? graphRailSteps(workflow.graph)
         : workflow.steps.map((s) => ({ id: s.id, name: s.name ?? s.id, kind: stepKind(s) })),
@@ -2294,7 +2312,28 @@ export class RunManager {
         while (this.queue.length > 0) {
           // FIFO among the runs that CAN start; a held one keeps its place in the queue rather
           // than being dequeued and re-queued (which would churn its position and its record).
-          const next = this.queue.findIndex(startable);
+          // With a `queueSelector` (factory pool), the STARTABLE set is offered to the selector;
+          // the sweep order among them stops being arrival order, nothing else changes.
+          let next = -1;
+          if (this.queueSelector) {
+            const candidates: Array<{ index: number; run: RunRecord }> = [];
+            for (let i = 0; i < this.queue.length; i += 1) {
+              const id = this.queue[i];
+              if (!id || !startable(id)) continue;
+              const run = this.store.getRun(id);
+              if (run) candidates.push({ index: i, run });
+            }
+            if (candidates.length === 0) break; // nothing queued can start right now
+            // No single-candidate fast path: the selector IS a gate (spec §9.1
+            // 所有入口同一闸门) — a lone factory task must still pass paused/
+            // stopped/budget/dependency checks, and its dispatch must count.
+            const picked = this.queueSelector(candidates.map((c) => c.run));
+            const found = picked ? candidates.find((c) => c.run.id === picked.id) : undefined;
+            if (!found) break; // the selector declines every candidate this sweep
+            next = found.index;
+          } else {
+            next = this.queue.findIndex(startable);
+          }
           if (next === -1) break; // nothing queued can start right now
           const runId = this.queue.splice(next, 1)[0];
           if (!runId) break;
@@ -6505,7 +6544,7 @@ export class RunManager {
       const checkpoint = this.store.getRun(runId);
       let initializedRetryBudget = false;
       for (const def of workflow.steps) {
-        if (!def.command || !def.onFail) continue;
+        if ((!def.command && !def.argv) || !def.onFail) continue;
         const loopId = graph.edges.find((e) => e.from === `${def.id}.fail`)?.to;
         if (!loopId) continue;
         checkLoops.set(loopId, def.id);
@@ -9629,14 +9668,24 @@ export class RunManager {
     step: WorkflowStepDef,
     emit: (event: { type: string; stepId?: string; [k: string]: unknown }) => void,
   ): Promise<{ ok: boolean; output: string; exitCode: number }> {
-    const command = step.command as string;
+    // `argv` (Cezar-GLM acceptance profiles, spec §10.3) spawns literal arguments with no
+    // shell — user strings never reach bash. `command` keeps the historical login shell.
+    // `spawnableCommand` unwraps Windows .cmd/.bat shims so a shell-less spawn of `npm`/`npx`
+    // works without a shell (CVE-2024-27980) — the same seam the runner probes use.
+    const shellless = step.argv !== undefined;
+    const argvSpawn = shellless ? spawnableCommand(step.argv![0]!, step.argv!.slice(1)) : undefined;
+    const argvFile = argvSpawn?.[0];
+    const argvArgs = argvSpawn?.[1];
+    const command = shellless ? step.argv!.join(' ') : (step.command as string);
     emit({ type: 'note', stepId: step.id, message: `$ ${command}` });
     const env = await this.checkStepEnv(runId, state, step, emit);
     // A cancel that landed during the read had no child to interrupt; do not spawn one now.
     if (state.cancelled) return { ok: false, output: 'cancelled', exitCode: -1 };
     return new Promise((resolve) => {
       // Check steps run in the same cwd as the agent steps — the worktree.
-      const child = spawn('bash', ['-lc', command], { cwd: state.cwd, env });
+      const child = argvFile
+        ? spawn(argvFile, argvArgs, { cwd: state.cwd, env })
+        : spawn('bash', ['-lc', command], { cwd: state.cwd, env });
       state.interrupt = () => child.kill('SIGTERM');
 
       let output = '';
@@ -9648,13 +9697,28 @@ export class RunManager {
       };
       child.stdout.on('data', collect);
       child.stderr.on('data', collect);
+      // Wall clock (spec §10.3: 检查必须带超时): SIGTERM, then SIGKILL after a grace —
+      // a hung check fails the step instead of hanging the run forever. exitCode -1 is
+      // the "no verdict" value no retryOn list can name.
+      let timer: NodeJS.Timeout | undefined;
+      if (step.timeoutMs !== undefined) {
+        const killTimer = setTimeout(() => {
+          emit({ type: 'note', stepId: step.id, message: `check timed out after ${step.timeoutMs}ms` });
+          child.kill('SIGTERM');
+          setTimeout(() => child.kill('SIGKILL'), CHECK_KILL_GRACE_MS).unref?.();
+        }, step.timeoutMs);
+        killTimer.unref?.();
+        timer = killTimer;
+      }
       child.on('error', (err) => {
+        if (timer) clearTimeout(timer);
         state.interrupt = () => undefined;
         const message = `failed to spawn: ${err.message}`;
         emit({ type: 'check-output', stepId: step.id, command, text: message, exitCode: -1 });
         resolve({ ok: false, output: message, exitCode: -1 });
       });
       child.on('close', (code) => {
+        if (timer) clearTimeout(timer);
         state.interrupt = () => undefined;
         const trimmed = output.trim() || '(no output)';
         // `code` is null when a signal killed the child; -1 then, the same value an
